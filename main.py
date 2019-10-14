@@ -21,6 +21,14 @@ args = arg_parser.parse_args()
 if args.gpu:
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
+import torch
+import torch.nn as nn
+import torch.nn.parallel
+import torch.backends.cudnn as cudnn
+import torch.optim
+
+device = torch.device(args.gpu if args.gpu!=None else 'cpu')
+
 args.grFactor = list(map(int, args.grFactor.split('-')))
 args.bnFactor = list(map(int, args.bnFactor.split('-')))
 args.nScales = len(args.grFactor)
@@ -36,12 +44,6 @@ elif args.data == 'cifar100':
     args.num_classes = 100
 else:
     args.num_classes = 1000
-
-import torch
-import torch.nn as nn
-import torch.nn.parallel
-import torch.backends.cudnn as cudnn
-import torch.optim
 
 torch.manual_seed(args.seed)
 
@@ -68,11 +70,11 @@ def main():
 
     if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
         model.features = torch.nn.DataParallel(model.features)
-        model.cuda()
+        model.to(device)
     else:
-        model = torch.nn.DataParallel(model).cuda()
+        model = torch.nn.DataParallel(model).to(device)
 
-    criterion = nn.CrossEntropyLoss().cuda()
+    criterion = nn.CrossEntropyLoss().to(device)
 
     optimizer = torch.optim.SGD(model.parameters(), args.lr,
                                 momentum=args.momentum,
@@ -161,7 +163,8 @@ def train(train_loader, model, criterion, optimizer, epoch):
 
         data_time.update(time.time() - end)
 
-        target = target.cuda(async=True)
+        if args.gpu:
+            target = target.cuda(async=True)
         input_var = torch.autograd.Variable(input)
         target_var = torch.autograd.Variable(target)
 
@@ -216,8 +219,9 @@ def validate(val_loader, model, criterion):
     end = time.time()
     with torch.no_grad():
         for i, (input, target) in enumerate(val_loader):
-            target = target.cuda(async=True)
-            input = input.cuda()
+            if args.gpu:
+                target = target.cuda(async=True)
+            input = input.to(device)
 
             input_var = torch.autograd.Variable(input)
             target_var = torch.autograd.Variable(target)
