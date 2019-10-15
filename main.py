@@ -27,7 +27,7 @@ import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.optim
 
-device = torch.device(args.gpu if args.gpu!=None else 'cpu')
+device = torch.device('cuda' if args.gpu!=None else 'cpu')
 
 args.grFactor = list(map(int, args.grFactor.split('-')))
 args.bnFactor = list(map(int, args.bnFactor.split('-')))
