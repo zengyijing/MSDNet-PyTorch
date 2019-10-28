@@ -39,7 +39,8 @@ class Tester(object):
     def __init__(self, model, args=None):
         self.args = args
         self.model = model
-        self.softmax = nn.Softmax(dim=1).cuda()
+        device = torch.device('cuda' if self.args.gpu!=None else 'cpu')
+        self.softmax = nn.Softmax(dim=1).to(device)
 
     def calc_logit(self, dataloader):
         self.model.eval()
