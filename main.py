@@ -73,6 +73,11 @@ def main():
         model.to(device)
     else:
         model = torch.nn.DataParallel(model).to(device)
+    #from itertools import chain
+    #for t in chain(model.module.parameters(), model.module.buffers()):
+    #    model.src_device_obj = t.device
+    #    break
+    #print("model.src_device_obj:",model.src_device_obj)
     
     criterion = nn.CrossEntropyLoss().to(device)
 
