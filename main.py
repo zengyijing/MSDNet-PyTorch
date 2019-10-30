@@ -73,7 +73,7 @@ def main():
         model.to(device)
     else:
         model = torch.nn.DataParallel(model).to(device)
-
+    
     criterion = nn.CrossEntropyLoss().to(device)
 
     optimizer = torch.optim.SGD(model.parameters(), args.lr,
@@ -95,6 +95,14 @@ def main():
     if args.evalmode is not None:
         state_dict = torch.load(args.evaluate_from)['state_dict']
         model.load_state_dict(state_dict)
+        if args.evalblock is not None:
+            assert args.evalblock < args.nBlocks
+            block = model.module.get_block(args.evalblock)
+            classifier = model.module.get_classifier(args.evalblock)
+            wholeblock = models.MSDBlock(block, classifier)
+            wholeblock = torch.nn.DataParallel(wholeblock).to(device)
+            validate_block(val_loader, wholeblock, criterion)
+            return
 
         if args.evalmode == 'anytime':
             validate(test_loader, model, criterion)
@@ -261,6 +269,58 @@ def validate(val_loader, model, criterion):
         print(' * prec@1 {top1.avg:.3f} prec@5 {top5.avg:.3f}'.format(top1=top1[j], top5=top5[j]))
     # print(' * prec@1 {top1.avg:.3f} prec@5 {top5.avg:.3f}'.format(top1=top1[-1], top5=top5[-1]))
     return losses.avg, top1[-1].avg, top5[-1].avg
+
+def validate_block(val_loader, wholeblock, criterion):
+    batch_time = AverageMeter()
+    losses = AverageMeter()
+    data_time = AverageMeter()
+
+    top1 = AverageMeter()
+    top5 = AverageMeter()
+
+    wholeblock.eval()
+
+    end = time.time()
+    with torch.no_grad():
+        for i, (input, target) in enumerate(val_loader):
+            if args.gpu:
+                target = target.cuda(async=True)
+            input = input.to(device)
+
+            input_var = torch.autograd.Variable(input)
+            target_var = torch.autograd.Variable(target)
+
+            data_time.update(time.time() - end)
+
+            output = wholeblock(input_var)
+            class_result = output[0]
+            intermediate_data = output[1]
+
+            loss = criterion(class_result, target_var)
+
+            losses.update(loss.item(), input.size(0))
+
+            prec1, prec5 = accuracy(class_result.data, target, topk=(1, 5))
+            top1.update(prec1.item(), input.size(0))
+            top5.update(prec5.item(), input.size(0))
+
+            # measure elapsed time
+            batch_time.update(time.time() - end)
+            end = time.time()
+
+            if i % args.print_freq == 0:
+                print('Epoch: [{0}/{1}]\t'
+                      'Time {batch_time.avg:.3f}\t'
+                      'Data {data_time.avg:.3f}\t'
+                      'Loss {loss.val:.4f}\t'
+                      'Acc@1 {top1.val:.4f}\t'
+                      'Acc@5 {top5.val:.4f}'.format(
+                        i + 1, len(val_loader),
+                        batch_time=batch_time, data_time=data_time,
+                        loss=losses, top1=top1, top5=top5))
+
+    print(' * prec@1 {top1.avg:.3f} prec@5 {top5.avg:.3f}'.format(top1=top1, top5=top5))
+    return losses.avg, top1.avg, top5.avg
 
 def save_checkpoint(state, args, is_best, filename, result):
     print(args)

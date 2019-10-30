@@ -339,3 +339,20 @@ class MSDNet(nn.Module):
             res.append(self.classifier[i](x))
         return res
 
+    def get_block(self, i):
+        return self.blocks[i]
+
+    def get_classifier(self, i):
+        return self.classifier[i]
+
+class MSDBlock(nn.Module):
+    def __init__(self, block, classifier):
+        super(MSDBlock, self).__init__()
+        self.block = block
+        self.classifier = classifier
+
+    def forward(self, x):
+        x = self.block(x)
+        res = self.classifier(x)
+        return [res,x]
+

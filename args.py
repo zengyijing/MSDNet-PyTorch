@@ -25,6 +25,8 @@ exp_group.add_argument('--print-freq', '-p', default=10, type=int,
 exp_group.add_argument('--seed', default=0, type=int,
                        help='random seed')
 exp_group.add_argument('--gpu', default=None, type=str, help='GPU available.')
+exp_group.add_argument('--evalblock', default=None, type=int,
+                       help='block id to evaluate')
 
 # dataset related
 data_group = arg_parser.add_argument_group('data', 'dataset setting')
