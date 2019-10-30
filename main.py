@@ -294,7 +294,10 @@ def validate_block(val_loader, wholeblock, criterion):
 
             output = wholeblock(input_var)
             class_result = output[0]
+            softmax = nn.Softmax(dim=1).to(device)
+            confidence = softmax(class_result).max(dim=1, keepdim=False)
             intermediate_data = output[1]
+            #print(intermediate_data)
 
             loss = criterion(class_result, target_var)
 
@@ -318,6 +321,8 @@ def validate_block(val_loader, wholeblock, criterion):
                         i + 1, len(val_loader),
                         batch_time=batch_time, data_time=data_time,
                         loss=losses, top1=top1, top5=top5))
+                #print(intermediate_data[0].shape, intermediate_data[1].shape, intermediate_data[2].shape)
+                print(confidence)
 
     print(' * prec@1 {top1.avg:.3f} prec@5 {top5.avg:.3f}'.format(top1=top1, top5=top5))
     return losses.avg, top1.avg, top5.avg
