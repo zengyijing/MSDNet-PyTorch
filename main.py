@@ -106,8 +106,12 @@ def main():
         model.load_state_dict(state_dict)
         if args.evalblock is not None:
             assert args.evalblock < args.nBlocks
-            block = model.module.get_block(args.evalblock)
-            classifier = model.module.get_classifier(args.evalblock)
+            if args.gpu is not None:
+                block = model.module.get_block(args.evalblock)
+                classifier = model.module.get_classifier(args.evalblock)
+            else:
+                block = model.get_block(args.evalblock)
+                classifier = model.get_classifier(args.evalblock)
             wholeblock = models.MSDBlock(block, classifier)
             if args.gpu is not None:
                 wholeblock = torch.nn.DataParallel(wholeblock).to(device)
