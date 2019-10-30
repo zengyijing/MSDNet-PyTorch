@@ -101,7 +101,8 @@ def main():
             classifier = model.module.get_classifier(args.evalblock)
             wholeblock = models.MSDBlock(block, classifier)
             wholeblock = torch.nn.DataParallel(wholeblock).to(device)
-            validate_block(val_loader, wholeblock, criterion)
+            if args.evalblock == 0:
+                validate_block(val_loader, wholeblock, criterion)
             return
 
         if args.evalmode == 'anytime':
