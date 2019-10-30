@@ -69,10 +69,14 @@ def main():
     model = getattr(models, args.arch)(args)
 
     if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
-        model.features = torch.nn.DataParallel(model.features)
+        if args.gpu is not None:
+            model.features = torch.nn.DataParallel(model.features)
         model.to(device)
     else:
-        model = torch.nn.DataParallel(model).to(device)
+        if args.gpu is not None:
+            model = torch.nn.DataParallel(model).to(device)
+        else:
+            model.to(device)
     #from itertools import chain
     #for t in chain(model.module.parameters(), model.module.buffers()):
     #    model.src_device_obj = t.device
@@ -105,7 +109,10 @@ def main():
             block = model.module.get_block(args.evalblock)
             classifier = model.module.get_classifier(args.evalblock)
             wholeblock = models.MSDBlock(block, classifier)
-            wholeblock = torch.nn.DataParallel(wholeblock).to(device)
+            if args.gpu is not None:
+                wholeblock = torch.nn.DataParallel(wholeblock).to(device)
+            else:
+                wholeblock.to(device)
             if args.evalblock == 0:
                 validate_block(val_loader, wholeblock, criterion)
             return
