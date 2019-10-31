@@ -321,7 +321,7 @@ def validate_block(val_loader, wholeblock, criterion):
             confidence = softmax(class_result).max(dim=1, keepdim=False)
             intermediate_data = output[1]
             for j in range(len(intermediate_data)):
-                dist.isend(intermediate_data[j], dst=1)
+                dist.send(intermediate_data[j], dst=1)
 
             loss = criterion(class_result, target_var)
 
@@ -361,7 +361,8 @@ def validate_block2(wholeblock):
 
     end = time.time()
     with torch.no_grad():
-        while True:
+        count = 0
+        while count<157:
             intermediate_data = torch.zeros((64, 40, 32, 32), dtype=torch.float32)
             intermediate_data1 = torch.zeros((64, 80, 16, 16), dtype=torch.float32)
             intermediate_data2 = torch.zeros((64, 160, 8, 8), dtype=torch.float32)
@@ -391,6 +392,14 @@ def validate_block2(wholeblock):
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
+
+            if count % args.print_freq == 0:
+                print('Epoch: [{0}/{1}]\t'
+                      'Time {batch_time.avg:.3f}\t'
+                      'Data {data_time.avg:.3f}'.format(
+                        count + 1,157,
+                        batch_time=batch_time, data_time=data_time))
+            count += 1
 
 
 def save_checkpoint(state, args, is_best, filename, result):
