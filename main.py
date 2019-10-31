@@ -26,6 +26,7 @@ import torch.nn as nn
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.optim
+import torch.distributed as dist
 
 device = torch.device('cuda' if args.gpu!=None else 'cpu')
 
@@ -71,10 +72,12 @@ def main():
     if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
         if args.gpu is not None:
             model.features = torch.nn.DataParallel(model.features)
+            model.features = model.features
         model.to(device)
     else:
         if args.gpu is not None:
             model = torch.nn.DataParallel(model).to(device)
+            #model.to(device)
         else:
             model.to(device)
     #from itertools import chain
@@ -106,6 +109,7 @@ def main():
         model.load_state_dict(state_dict)
         if args.evalblock is not None:
             assert args.evalblock < args.nBlocks
+            dist.init_process_group(backend='gloo', init_method="tcp://127.0.0.1:12345", rank=args.evalblock, world_size=2)
             if args.gpu is not None:
                 block = model.module.get_block(args.evalblock)
                 classifier = model.module.get_classifier(args.evalblock)
@@ -119,6 +123,8 @@ def main():
                 wholeblock.to(device)
             if args.evalblock == 0:
                 validate_block(val_loader, wholeblock, criterion)
+            else:
+                validate_block2(wholeblock)
             return
 
         if args.evalmode == 'anytime':
@@ -314,7 +320,8 @@ def validate_block(val_loader, wholeblock, criterion):
             softmax = nn.Softmax(dim=1).to(device)
             confidence = softmax(class_result).max(dim=1, keepdim=False)
             intermediate_data = output[1]
-            #print(intermediate_data)
+            for j in range(len(intermediate_data)):
+                dist.isend(intermediate_data[j], dst=1)
 
             loss = criterion(class_result, target_var)
 
@@ -338,11 +345,53 @@ def validate_block(val_loader, wholeblock, criterion):
                         i + 1, len(val_loader),
                         batch_time=batch_time, data_time=data_time,
                         loss=losses, top1=top1, top5=top5))
-                #print(intermediate_data[0].shape, intermediate_data[1].shape, intermediate_data[2].shape)
-                print(confidence)
 
     print(' * prec@1 {top1.avg:.3f} prec@5 {top5.avg:.3f}'.format(top1=top1, top5=top5))
     return losses.avg, top1.avg, top5.avg
+
+def validate_block2(wholeblock):
+    batch_time = AverageMeter()
+    losses = AverageMeter()
+    data_time = AverageMeter()
+
+    top1 = AverageMeter()
+    top5 = AverageMeter()
+
+    wholeblock.eval()
+
+    end = time.time()
+    with torch.no_grad():
+        while True:
+            intermediate_data = torch.zeros((64, 40, 32, 32), dtype=torch.float32)
+            intermediate_data1 = torch.zeros((64, 80, 16, 16), dtype=torch.float32)
+            intermediate_data2 = torch.zeros((64, 160, 8, 8), dtype=torch.float32)
+            dist.recv(intermediate_data, src=0)
+            dist.recv(intermediate_data1, src=0)
+            dist.recv(intermediate_data2, src=0)
+            intermediate_data = [intermediate_data,intermediate_data1,intermediate_data2]
+            if args.gpu:
+                for i in range(len(intermediate_data)):
+                    intermediate_data[i] = intermediate_data[i].cuda(async=True)
+            for i in range(len(intermediate_data)):
+                intermediate_data[i] = intermediate_data[i].to(device)
+
+            #intermediate_var = torch.autograd.Variable(intermediate_data)
+
+            data_time.update(time.time() - end)
+
+            #output = wholeblock(intermediate_var)
+            output = wholeblock(intermediate_data)
+            class_result = output[0]
+            softmax = nn.Softmax(dim=1).to(device)
+            confidence = softmax(class_result).max(dim=1, keepdim=False)
+            #print(confidence[0].shape)
+            further_data = output[1]
+            #print(further_data)
+
+            # measure elapsed time
+            batch_time.update(time.time() - end)
+            end = time.time()
+
 
 def save_checkpoint(state, args, is_best, filename, result):
     print(args)
