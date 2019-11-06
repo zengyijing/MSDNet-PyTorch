@@ -109,7 +109,7 @@ def main():
         model.load_state_dict(state_dict)
         if args.evalblock is not None:
             assert args.evalblock < args.nBlocks
-            dist.init_process_group(backend='gloo', init_method="tcp://127.0.0.1:12345", rank=args.evalblock, world_size=2)
+            dist.init_process_group(backend='gloo', init_method="tcp://127.0.0.1:12345", rank=args.evalblock, world_size=args.nBlocks)
             if args.gpu is not None:
                 block = model.module.get_block(args.evalblock)
                 classifier = model.module.get_classifier(args.evalblock)
@@ -320,8 +320,9 @@ def validate_block(val_loader, wholeblock, criterion):
             softmax = nn.Softmax(dim=1).to(device)
             confidence = softmax(class_result).max(dim=1, keepdim=False)
             intermediate_data = output[1]
-            for j in range(len(intermediate_data)):
-                dist.send(intermediate_data[j], dst=1)
+            if confidence[0] < 2:
+                for j in range(len(intermediate_data)):
+                    dist.send(intermediate_data[j], dst=1)
 
             loss = criterion(class_result, target_var)
 
@@ -362,14 +363,26 @@ def validate_block2(wholeblock):
     end = time.time()
     with torch.no_grad():
         count = 0
-        while count<157:
-            intermediate_data = torch.zeros((64, 40, 32, 32), dtype=torch.float32)
-            intermediate_data1 = torch.zeros((64, 80, 16, 16), dtype=torch.float32)
-            intermediate_data2 = torch.zeros((64, 160, 8, 8), dtype=torch.float32)
-            dist.recv(intermediate_data, src=0)
-            dist.recv(intermediate_data1, src=0)
-            dist.recv(intermediate_data2, src=0)
-            intermediate_data = [intermediate_data,intermediate_data1,intermediate_data2]
+        max_count = 10000;
+        while count<max_count:
+            dims = [[(1, 40, 32, 32),(1, 80, 16, 16),(1, 160, 8, 8)],
+                    [(1, 52, 32, 32),(1, 104, 16, 16),(1, 208, 8, 8)],
+                    [(1, 70, 16, 16),(1, 140, 8, 8)],
+                    [(1, 94, 16, 16),(1, 188, 8, 8)],
+                    [(1, 118, 16, 16),(1, 236, 8, 8)],
+                    [(1,152,8,8,)]]
+            intermediate_data = []
+            for dim in dims[args.evalblock-1]:
+                temp = torch.zeros(dim, dtype=torch.float32)
+                dist.recv(temp, src=args.evalblock-1)
+                intermediate_data.append(temp)
+            #intermediate_data = torch.zeros((1, 40, 32, 32), dtype=torch.float32)
+            #intermediate_data1 = torch.zeros((1, 80, 16, 16), dtype=torch.float32)
+            #intermediate_data2 = torch.zeros((1, 160, 8, 8), dtype=torch.float32)
+            #dist.recv(intermediate_data, src=args.evalblock-1)
+            #dist.recv(intermediate_data1, src=args.evalblock-1)
+            #dist.recv(intermediate_data2, src=args.evalblock-1)
+            #intermediate_data = [intermediate_data,intermediate_data1,intermediate_data2]
             if args.gpu:
                 for i in range(len(intermediate_data)):
                     intermediate_data[i] = intermediate_data[i].cuda(async=True)
@@ -388,6 +401,9 @@ def validate_block2(wholeblock):
             #print(confidence[0].shape)
             further_data = output[1]
             #print(further_data)
+            if args.evalblock<6 and confidence[0] < 2:
+                for j in range(len(further_data_data)):
+                    dist.send(further_data[j], dst=args.evalblock+1)
 
             # measure elapsed time
             batch_time.update(time.time() - end)
@@ -397,7 +413,7 @@ def validate_block2(wholeblock):
                 print('Epoch: [{0}/{1}]\t'
                       'Time {batch_time.avg:.3f}\t'
                       'Data {data_time.avg:.3f}'.format(
-                        count + 1,157,
+                        count + 1,max_count,
                         batch_time=batch_time, data_time=data_time))
             count += 1
 
