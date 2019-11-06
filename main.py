@@ -402,7 +402,7 @@ def validate_block2(wholeblock):
             further_data = output[1]
             #print(further_data)
             if args.evalblock<6 and confidence[0] < 2:
-                for j in range(len(further_data_data)):
+                for j in range(len(further_data)):
                     dist.send(further_data[j], dst=args.evalblock+1)
 
             # measure elapsed time
