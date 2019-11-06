@@ -110,7 +110,7 @@ def main():
         if args.evalblock is not None:
             assert args.evalblock < args.nBlocks
             dist.init_process_group(backend='gloo', init_method="tcp://"+args.master, rank=args.evalblock, world_size=args.nBlocks)
-            sample = torch.zeros((args.batch_size, 3, 32, 32), dtype=torch.float32)
+            sample = torch.zeros((args.batch_size, 3, IM_SIZE, IM_SIZE), dtype=torch.float32)
             dims = []
             for block in model.blocks:
                 sample = block(sample)
