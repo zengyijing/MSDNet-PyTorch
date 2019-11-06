@@ -110,6 +110,14 @@ def main():
         if args.evalblock is not None:
             assert args.evalblock < args.nBlocks
             dist.init_process_group(backend='gloo', init_method="tcp://"+args.master, rank=args.evalblock, world_size=args.nBlocks)
+            sample = torch.zeros((args.batch_size, 3, 32, 32), dtype=torch.float32)
+            dims = []
+            for block in model.blocks:
+                sample = block(sample)
+                temp = []
+                for i in range(len(sample)):
+                    temp.append(sample[i].size())
+                dims.append(temp)
             if args.gpu is not None:
                 block = model.module.get_block(args.evalblock)
                 classifier = model.module.get_classifier(args.evalblock)
@@ -124,7 +132,7 @@ def main():
             if args.evalblock == 0:
                 validate_block(val_loader, wholeblock, criterion)
             else:
-                validate_block2(wholeblock)
+                validate_block2(wholeblock,dims)
             return
 
         if args.evalmode == 'anytime':
@@ -350,7 +358,7 @@ def validate_block(val_loader, wholeblock, criterion):
     print(' * prec@1 {top1.avg:.3f} prec@5 {top5.avg:.3f}'.format(top1=top1, top5=top5))
     return losses.avg, top1.avg, top5.avg
 
-def validate_block2(wholeblock):
+def validate_block2(wholeblock, dims):
     batch_time = AverageMeter()
     losses = AverageMeter()
     data_time = AverageMeter()
@@ -365,12 +373,14 @@ def validate_block2(wholeblock):
         count = 0
         max_count = 10000;
         while count<max_count:
+            """
             dims = [[(1, 40, 32, 32),(1, 80, 16, 16),(1, 160, 8, 8)],
                     [(1, 52, 32, 32),(1, 104, 16, 16),(1, 208, 8, 8)],
                     [(1, 70, 16, 16),(1, 140, 8, 8)],
                     [(1, 94, 16, 16),(1, 188, 8, 8)],
                     [(1, 118, 16, 16),(1, 236, 8, 8)],
                     [(1,152,8,8,)]]
+            """
             intermediate_data = []
             for dim in dims[args.evalblock-1]:
                 temp = torch.zeros(dim, dtype=torch.float32)
