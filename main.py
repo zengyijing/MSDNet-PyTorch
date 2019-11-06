@@ -109,7 +109,7 @@ def main():
         model.load_state_dict(state_dict)
         if args.evalblock is not None:
             assert args.evalblock < args.nBlocks
-            dist.init_process_group(backend='gloo', init_method="tcp://127.0.0.1:12345", rank=args.evalblock, world_size=args.nBlocks)
+            dist.init_process_group(backend='gloo', init_method="tcp://"+args.master, rank=args.evalblock, world_size=args.nBlocks)
             if args.gpu is not None:
                 block = model.module.get_block(args.evalblock)
                 classifier = model.module.get_classifier(args.evalblock)
