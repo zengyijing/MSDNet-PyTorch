@@ -337,6 +337,8 @@ def validate_block(val_loader, wholeblock, criterion):
             intermediate_data = output[1]
             if confidence[0] < 2:
                 for j in range(len(intermediate_data)):
+                    if args.gpu:
+                        intermediate_data[j] = intermediate_data[j].cpu()
                     dist.send(intermediate_data[j], dst=1)
 
             loss = criterion(class_result, target_var)
@@ -420,6 +422,8 @@ def validate_block2(wholeblock, dims):
             #print(further_data)
             if args.evalblock<6 and confidence[0] < 2:
                 for j in range(len(further_data)):
+                    if args.gpu:
+                        further_data[j] = further_data[j].cpu()
                     dist.send(further_data[j], dst=args.evalblock+1)
 
             # measure elapsed time
