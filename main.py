@@ -420,7 +420,7 @@ def validate_block2(wholeblock, dims):
             #print(confidence[0].shape)
             further_data = output[1]
             #print(further_data)
-            if args.evalblock<6 and confidence[0] < 2:
+            if args.evalblock < args.nBlocks-1 and confidence[0] < 2:
                 for j in range(len(further_data)):
                     if args.gpu:
                         further_data[j] = further_data[j].cpu()
