@@ -77,15 +77,8 @@ def main():
     else:
         if args.gpu is not None:
             model = torch.nn.DataParallel(model).to(device)
-            #model.to(device)
         else:
             model.to(device)
-    #from itertools import chain
-    #for t in chain(model.module.parameters(), model.module.buffers()):
-    #    model.src_device_obj = t.device
-    #    break
-    #print("model.src_device_obj:",model.src_device_obj)
-    
     criterion = nn.CrossEntropyLoss().to(device)
 
     optimizer = torch.optim.SGD(model.parameters(), args.lr,
@@ -305,7 +298,6 @@ def validate(val_loader, model, criterion):
                         loss=losses, top1=top1[-1], top5=top5[-1]))
     for j in range(args.nBlocks):
         print(' * prec@1 {top1.avg:.3f} prec@5 {top5.avg:.3f}'.format(top1=top1[j], top5=top5[j]))
-    # print(' * prec@1 {top1.avg:.3f} prec@5 {top5.avg:.3f}'.format(top1=top1[-1], top5=top5[-1]))
     return losses.avg, top1[-1].avg, top5[-1].avg
 
 def validate_block(val_loader, wholeblock, criterion):
@@ -382,44 +374,24 @@ def validate_block2(wholeblock, dims):
         count = 0
         max_count = 10000;
         while count<max_count:
-            """
-            dims = [[(1, 40, 32, 32),(1, 80, 16, 16),(1, 160, 8, 8)],
-                    [(1, 52, 32, 32),(1, 104, 16, 16),(1, 208, 8, 8)],
-                    [(1, 70, 16, 16),(1, 140, 8, 8)],
-                    [(1, 94, 16, 16),(1, 188, 8, 8)],
-                    [(1, 118, 16, 16),(1, 236, 8, 8)],
-                    [(1,152,8,8,)]]
-            """
             intermediate_data = []
             for dim in dims[args.evalblock-1]:
                 temp = torch.zeros(dim, dtype=torch.float32)
                 dist.recv(temp, src=args.evalblock-1)
                 intermediate_data.append(temp)
-            #intermediate_data = torch.zeros((1, 40, 32, 32), dtype=torch.float32)
-            #intermediate_data1 = torch.zeros((1, 80, 16, 16), dtype=torch.float32)
-            #intermediate_data2 = torch.zeros((1, 160, 8, 8), dtype=torch.float32)
-            #dist.recv(intermediate_data, src=args.evalblock-1)
-            #dist.recv(intermediate_data1, src=args.evalblock-1)
-            #dist.recv(intermediate_data2, src=args.evalblock-1)
-            #intermediate_data = [intermediate_data,intermediate_data1,intermediate_data2]
             if args.gpu:
                 for i in range(len(intermediate_data)):
                     intermediate_data[i] = intermediate_data[i].cuda(async=True)
             for i in range(len(intermediate_data)):
                 intermediate_data[i] = intermediate_data[i].to(device)
 
-            #intermediate_var = torch.autograd.Variable(intermediate_data)
-
             data_time.update(time.time() - end)
 
-            #output = wholeblock(intermediate_var)
             output = wholeblock(intermediate_data)
             class_result = output[0]
             softmax = nn.Softmax(dim=1).to(device)
             confidence = softmax(class_result).max(dim=1, keepdim=False)
-            #print(confidence[0].shape)
             further_data = output[1]
-            #print(further_data)
             if args.evalblock < args.nBlocks-1 and confidence[0] < args.confidence:
                 for j in range(len(further_data)):
                     if args.gpu:
