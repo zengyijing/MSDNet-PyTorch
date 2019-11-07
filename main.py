@@ -112,16 +112,22 @@ def main():
             dist.init_process_group(backend='gloo', init_method="tcp://"+args.master, rank=args.evalblock, world_size=args.nBlocks)
             sample = torch.zeros((args.batch_size, 3, IM_SIZE, IM_SIZE), dtype=torch.float32)
             dims = []
-            for block in model.blocks:
-                sample = block(sample)
-                temp = []
-                for i in range(len(sample)):
-                    temp.append(sample[i].size())
-                dims.append(temp)
             if args.gpu is not None:
+                for block in model.module.blocks:
+                    sample = block(sample)
+                    temp = []
+                    for i in range(len(sample)):
+                        temp.append(sample[i].size())
+                    dims.append(temp)
                 block = model.module.get_block(args.evalblock)
                 classifier = model.module.get_classifier(args.evalblock)
             else:
+                for block in model.blocks:
+                    sample = block(sample)
+                    temp = []
+                    for i in range(len(sample)):
+                        temp.append(sample[i].size())
+                    dims.append(temp)
                 block = model.get_block(args.evalblock)
                 classifier = model.get_classifier(args.evalblock)
             wholeblock = models.MSDBlock(block, classifier)
