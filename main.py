@@ -335,7 +335,7 @@ def validate_block(val_loader, wholeblock, criterion):
             softmax = nn.Softmax(dim=1).to(device)
             confidence = softmax(class_result).max(dim=1, keepdim=False)
             intermediate_data = output[1]
-            if confidence[0] < 2:
+            if confidence[0] < args.confidence:
                 for j in range(len(intermediate_data)):
                     if args.gpu:
                         intermediate_data[j] = intermediate_data[j].cpu()
@@ -420,7 +420,7 @@ def validate_block2(wholeblock, dims):
             #print(confidence[0].shape)
             further_data = output[1]
             #print(further_data)
-            if args.evalblock < args.nBlocks-1 and confidence[0] < 2:
+            if args.evalblock < args.nBlocks-1 and confidence[0] < args.confidence:
                 for j in range(len(further_data)):
                     if args.gpu:
                         further_data[j] = further_data[j].cpu()

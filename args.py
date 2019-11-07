@@ -28,6 +28,8 @@ exp_group.add_argument('--gpu', default=None, type=str, help='GPU available.')
 exp_group.add_argument('--master', default=None, type=str, help='IP and port number of master block.')
 exp_group.add_argument('--evalblock', default=None, type=int,
                        help='block id to evaluate')
+exp_group.add_argument('--confidence', default=2.0, type=float,
+                       help='initial learning rate (default: 2.0)')
 
 # dataset related
 data_group = arg_parser.add_argument_group('data', 'dataset setting')
