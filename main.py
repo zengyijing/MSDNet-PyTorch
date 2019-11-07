@@ -113,7 +113,7 @@ def main():
             sample = torch.zeros((args.batch_size, 3, IM_SIZE, IM_SIZE), dtype=torch.float32)
             dims = []
             if args.gpu is not None:
-                sample = torch.nn.DataParallel(sample).to(device)
+                sample = sample.to(device)
                 for block in model.module.blocks:
                     sample = block(sample)
                     temp = []
