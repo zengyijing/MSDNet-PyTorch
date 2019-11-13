@@ -85,7 +85,7 @@ def main():
                                 momentum=args.momentum,
                                 weight_decay=args.weight_decay)
 
-    if args.resume:
+    if args.resume and args.evalmode is None:
         checkpoint = load_checkpoint(args)
         if checkpoint is not None:
             args.start_epoch = checkpoint['epoch'] + 1
@@ -98,8 +98,13 @@ def main():
     train_loader, val_loader, test_loader = get_dataloaders(args)
 
     if args.evalmode is not None:
-        state_dict = torch.load(args.evaluate_from)['state_dict']
-        model.load_state_dict(state_dict)
+        state_dict = torch.load(args.evaluate_from, map_location=device)['state_dict']
+        #model.load_state_dict(state_dict)
+        try:
+            model.load_state_dict(state_dict)
+        except:
+            if args.gpu is None: #cpu running setting loads gpu learned model
+                torch.nn.DataParallel(model).load_state_dict(state_dict)
         if args.evalblock is not None:
             assert args.evalblock < args.nBlocks
             dist.init_process_group(backend='gloo', init_method="tcp://"+args.master, rank=args.evalblock, world_size=args.nBlocks)
@@ -444,7 +449,7 @@ def load_checkpoint(args):
     else:
         return None
     print("=> loading checkpoint '{}'".format(model_filename))
-    state = torch.load(model_filename)
+    state = torch.load(model_filename, map_location=device)
     print("=> loaded checkpoint '{}'".format(model_filename))
     return state
 
