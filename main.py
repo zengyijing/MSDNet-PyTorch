@@ -99,12 +99,10 @@ def main():
 
     if args.evalmode is not None:
         state_dict = torch.load(args.evaluate_from, map_location=device)['state_dict']
-        #model.load_state_dict(state_dict)
         try:
             model.load_state_dict(state_dict)
         except:
-            if args.gpu is None: #cpu running setting loads gpu learned model
-                torch.nn.DataParallel(model).load_state_dict(state_dict)
+            torch.nn.DataParallel(model).load_state_dict(state_dict)  #for cpu running setting loads gpu learned model
         if args.evalblock is not None:
             assert args.evalblock < args.nBlocks
             dist.init_process_group(backend='gloo', init_method="tcp://"+args.master, rank=args.evalblock, world_size=args.nBlocks)
