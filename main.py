@@ -114,7 +114,7 @@ def main():
                     sample = block(sample)
                     temp = []
                     for i in range(len(sample)):
-                        temp.append(sample[i].size())
+                        temp.append(list(sample[i].size()))
                     dims.append(temp)
                 block = model.module.get_block(args.evalblock)
                 classifier = model.module.get_classifier(args.evalblock)
@@ -385,7 +385,6 @@ def validate_block2(wholeblock, dims):
             batch_size = torch.tensor(0, dtype=torch.int8)
             dist.recv(batch_size, src=args.evalblock-1)
             for dim in dims[args.evalblock-1]:
-                dim = list(dim)
                 dim[0] = batch_size
                 temp = torch.zeros(dim, dtype=torch.float32)
                 dist.recv(temp, src=args.evalblock-1)
