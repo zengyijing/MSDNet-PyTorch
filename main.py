@@ -330,11 +330,15 @@ def validate_block(val_loader, wholeblock, criterion):
             softmax = nn.Softmax(dim=1).to(device)
             confidence = softmax(class_result).max(dim=1, keepdim=False)
             intermediate_data = output[1]
-            if confidence[0] < args.confidence:
+            #print(confidence)
+            idx = confidence.values < args.confidence
+            if len(confidence.values[idx]) > 0:
+                batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
+                dist.send(batch_size, dst=1)
                 for j in range(len(intermediate_data)):
                     if args.gpu:
                         intermediate_data[j] = intermediate_data[j].cpu()
-                    dist.send(intermediate_data[j], dst=1)
+                    dist.send(intermediate_data[j][idx], dst=1)
 
             loss = criterion(class_result, target_var)
 
@@ -378,7 +382,11 @@ def validate_block2(wholeblock, dims):
         max_count = 10000;
         while count<max_count:
             intermediate_data = []
+            batch_size = torch.tensor(0, dtype=torch.int8)
+            dist.recv(batch_size, src=args.evalblock-1)
             for dim in dims[args.evalblock-1]:
+                dim = list(dim)
+                dim[0] = batch_size
                 temp = torch.zeros(dim, dtype=torch.float32)
                 dist.recv(temp, src=args.evalblock-1)
                 intermediate_data.append(temp)
@@ -395,11 +403,14 @@ def validate_block2(wholeblock, dims):
             softmax = nn.Softmax(dim=1).to(device)
             confidence = softmax(class_result).max(dim=1, keepdim=False)
             further_data = output[1]
-            if args.evalblock < args.nBlocks-1 and confidence[0] < args.confidence:
+            idx = confidence.values < args.confidence
+            if args.evalblock < args.nBlocks-1 and len(confidence.values[idx]) > 1:
+                batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
+                dist.send(batch_size, dst=args.evalblock+1)
                 for j in range(len(further_data)):
                     if args.gpu:
                         further_data[j] = further_data[j].cpu()
-                    dist.send(further_data[j], dst=args.evalblock+1)
+                    dist.send(further_data[j][idx], dst=args.evalblock+1)
 
             # measure elapsed time
             batch_time.update(time.time() - end)
