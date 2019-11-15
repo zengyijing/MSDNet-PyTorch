@@ -123,7 +123,7 @@ def main():
                     sample = block(sample)
                     temp = []
                     for i in range(len(sample)):
-                        temp.append(sample[i].size())
+                        temp.append(list(sample[i].size()))
                     dims.append(temp)
                 block = model.get_block(args.evalblock)
                 classifier = model.get_classifier(args.evalblock)
@@ -340,6 +340,13 @@ def validate_block(val_loader, wholeblock, criterion):
                         intermediate_data[j] = intermediate_data[j].cpu()
                     dist.send(intermediate_data[j][idx], dst=1)
 
+                count = len(confidence.values[idx])
+                while count > 0:
+                    dist.recv(batch_size)
+                    final_classification = torch.zeros(batch_size, dtype=torch.int64)
+                    dist.recv(final_classification)
+                    count -= int(batch_size)
+
             loss = criterion(class_result, target_var)
 
             losses.update(loss.item(), input.size(0))
@@ -403,13 +410,25 @@ def validate_block2(wholeblock, dims):
             confidence = softmax(class_result).max(dim=1, keepdim=False)
             further_data = output[1]
             idx = confidence.values < args.confidence
-            if args.evalblock < args.nBlocks-1 and len(confidence.values[idx]) > 1:
+            if args.evalblock < args.nBlocks-1 and len(confidence.values[idx]) > 0:
                 batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
                 dist.send(batch_size, dst=args.evalblock+1)
                 for j in range(len(further_data)):
                     if args.gpu:
                         further_data[j] = further_data[j].cpu()
                     dist.send(further_data[j][idx], dst=args.evalblock+1)
+
+            idx = confidence.values >= args.confidence
+            if args.evalblock == args.nBlocks-1 or len(confidence.values[idx]) > 0:
+                if args.evalblock == args.nBlocks-1:
+                    batch_size = torch.tensor(len(confidence.values), dtype=torch.int8)
+                else:
+                    batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
+                dist.send(batch_size, dst=0)
+                if args.evalblock == args.nBlocks-1:
+                    dist.send(confidence.indices)
+                else:
+                    dist.send(confidence.indices[idx])
 
             # measure elapsed time
             batch_time.update(time.time() - end)
