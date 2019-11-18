@@ -105,7 +105,7 @@ def main():
             if args.gpu is None:
                 torch.nn.DataParallel(model).load_state_dict(state_dict)  #for cpu running setting loads gpu learned model
             else:
-                model.module.load_state_dict(state_dict)
+                model.module.load_state_dict(state_dict) #for gpu running setting loads cpu learned model
         if args.evalblock is not None:
             assert args.evalblock < args.nBlocks
             dist.init_process_group(backend='gloo', init_method="tcp://"+args.master, rank=args.evalblock, world_size=args.nBlocks)
@@ -428,10 +428,14 @@ def validate_block2(wholeblock, dims):
                 else:
                     batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
                 dist.send(batch_size, dst=0)
-                if args.evalblock == args.nBlocks-1:
-                    dist.send(confidence.indices, dst=0)
+                if args.gpu:
+                    class_result = confidence.indices.cpu()
                 else:
-                    dist.send(confidence.indices[idx], dst=0)
+                    class_result = confidence.indices
+                if args.evalblock == args.nBlocks-1:
+                    dist.send(class_result, dst=0)
+                else:
+                    dist.send(class_result[idx], dst=0)
 
             # measure elapsed time
             batch_time.update(time.time() - end)
