@@ -334,10 +334,14 @@ def validate_block(val_loader, wholeblock, criterion):
             confidence = softmax(class_result).max(dim=1, keepdim=False)
             intermediate_data = output[1]
             #print(confidence)
+            ids = torch.zeros(args.batch_size, dtype=torch.int32)
+            for j in range(args.batch_size):
+                ids[j] = i * args.batch_size + j
             idx = confidence.values < args.confidence
             if len(confidence.values[idx]) > 0:
                 batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
                 dist.send(batch_size, dst=1)
+                dist.send(ids[idx], dst=1)
                 for j in range(len(intermediate_data)):
                     if args.gpu:
                         intermediate_data[j] = intermediate_data[j].cpu()
@@ -346,6 +350,8 @@ def validate_block(val_loader, wholeblock, criterion):
                 count = len(confidence.values[idx])
                 while count > 0:
                     dist.recv(batch_size)
+                    ids = torch.zeros(batch_size, dtype=torch.int32)
+                    dist.recv(ids)
                     final_classification = torch.zeros(batch_size, dtype=torch.int64)
                     dist.recv(final_classification)
                     count -= int(batch_size)
@@ -394,6 +400,8 @@ def validate_block2(wholeblock, dims):
             intermediate_data = []
             batch_size = torch.tensor(0, dtype=torch.int8)
             dist.recv(batch_size, src=args.evalblock-1)
+            ids = torch.zeros(batch_size, dtype=torch.int32)
+            dist.recv(ids, src=args.evalblock-1)
             for dim in dims[args.evalblock-1]:
                 dim[0] = batch_size
                 temp = torch.zeros(dim, dtype=torch.float32)
@@ -416,6 +424,7 @@ def validate_block2(wholeblock, dims):
             if args.evalblock < args.nBlocks-1 and len(confidence.values[idx]) > 0:
                 batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
                 dist.send(batch_size, dst=args.evalblock+1)
+                dist.send(ids[idx], dst=args.evalblock+1)
                 for j in range(len(further_data)):
                     if args.gpu:
                         further_data[j] = further_data[j].cpu()
@@ -433,8 +442,10 @@ def validate_block2(wholeblock, dims):
                 else:
                     class_result = confidence.indices
                 if args.evalblock == args.nBlocks-1:
+                    dist.send(ids, dst=0)
                     dist.send(class_result, dst=0)
                 else:
+                    dist.send(ids[idx], dst=0)
                     dist.send(class_result[idx], dst=0)
 
             # measure elapsed time
