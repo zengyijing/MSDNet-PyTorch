@@ -352,6 +352,8 @@ def validate_block(val_loader, wholeblock, criterion):
                     dist.recv(batch_size)
                     ids = torch.zeros(batch_size, dtype=torch.int32)
                     dist.recv(ids)
+                    conf = torch.zeros(batch_size, dtype=torch.float32)
+                    dist.recv(conf)
                     final_classification = torch.zeros(batch_size, dtype=torch.int64)
                     dist.recv(final_classification)
                     count -= int(batch_size)
@@ -438,14 +440,18 @@ def validate_block2(wholeblock, dims):
                     batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
                 dist.send(batch_size, dst=0)
                 if args.gpu:
+                    class_conf = confidence.values.cpu()
                     class_result = confidence.indices.cpu()
                 else:
+                    class_conf = confidence.values
                     class_result = confidence.indices
                 if args.evalblock == args.nBlocks-1:
                     dist.send(ids, dst=0)
+                    dist.send(class_conf, dst=0)
                     dist.send(class_result, dst=0)
                 else:
                     dist.send(ids[idx], dst=0)
+                    dist.send(class_conf[idx], dst=0)
                     dist.send(class_result[idx], dst=0)
 
             # measure elapsed time
