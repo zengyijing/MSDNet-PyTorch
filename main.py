@@ -184,6 +184,41 @@ def main():
 
     return 
 
+def convert_to_sparse_send(dense_tensor, dst):
+    num_of_dim = torch.tensor(len(dense_tensor.shape), dtype=torch.uint8)
+    dist.send(num_of_dim, dst=dst)
+    dims = torch.tensor(dense_tensor.shape, dtype=torch.int16)
+    dist.send(dims, dst=dst)
+    sparse_tensor = dense_tensor.to_sparse()
+    nnz = torch.tensor(sparse_tensor._nnz(), dtype=torch.int32)
+    dist.send(nnz, dst=dst)
+    if nnz!=0:
+        indices = sparse_tensor._indices().type(torch.int16)
+        dist.send(indices, dst=dst)
+        values = sparse_tensor._values()
+        dist.send(values, dst=dst)
+    
+def receive_sparse_convert(src=None):
+    print("receive_sparse_convert")
+    num_of_dim = torch.tensor(0, dtype=torch.uint8)
+    dist.recv(num_of_dim, src=src)
+    num_of_dim = int(num_of_dim)
+    dims = torch.zeros(num_of_dim, dtype=torch.int16)
+    dist.recv(dims, src=src)
+    dims = dims.tolist()
+    nnz = torch.tensor(0, dtype=torch.int32)
+    dist.recv(nnz, src=src)
+    nnz = int(nnz)
+    if nnz==0:
+        return torch.zeros(dims, dtype=torch.float32)
+    else:
+        indices = torch.zeros([num_of_dim, nnz], dtype=torch.int16)
+        dist.recv(indices, src=src)
+        values = torch.zeros(nnz, dtype=torch.float32)
+        dist.recv(values, src=src)
+        return torch.sparse.FloatTensor(indices.type(torch.int64), values, dims).to_dense()
+
+
 def train(train_loader, model, criterion, optimizer, epoch):
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -345,7 +380,8 @@ def validate_block(val_loader, wholeblock, criterion):
                 for j in range(len(intermediate_data)):
                     if args.gpu:
                         intermediate_data[j] = intermediate_data[j].cpu()
-                    dist.send(intermediate_data[j][idx], dst=1)
+                    #dist.send(intermediate_data[j][idx], dst=1)
+                    convert_to_sparse_send(intermediate_data[j][idx], dst=1)
 
                 count = len(confidence.values[idx])
                 while count > 0:
@@ -407,7 +443,8 @@ def validate_block2(wholeblock, dims):
             for dim in dims[args.evalblock-1]:
                 dim[0] = batch_size
                 temp = torch.zeros(dim, dtype=torch.float32)
-                dist.recv(temp, src=args.evalblock-1)
+                #dist.recv(temp, src=args.evalblock-1)
+                temp = receive_sparse_convert(src=args.evalblock-1)
                 intermediate_data.append(temp)
             if args.gpu:
                 for i in range(len(intermediate_data)):
@@ -430,7 +467,8 @@ def validate_block2(wholeblock, dims):
                 for j in range(len(further_data)):
                     if args.gpu:
                         further_data[j] = further_data[j].cpu()
-                    dist.send(further_data[j][idx], dst=args.evalblock+1)
+                    #dist.send(further_data[j][idx], dst=args.evalblock+1)
+                    convert_to_sparse_send(further_data[j][idx], dst=args.evalblock+1)
 
             idx = confidence.values >= args.confidence
             if args.evalblock == args.nBlocks-1 or len(confidence.values[idx]) > 0:
