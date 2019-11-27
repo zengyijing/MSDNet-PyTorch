@@ -199,7 +199,6 @@ def convert_to_sparse_send(dense_tensor, dst):
         dist.send(values, dst=dst)
     
 def receive_sparse_convert(src=None):
-    print("receive_sparse_convert")
     num_of_dim = torch.tensor(0, dtype=torch.uint8)
     dist.recv(num_of_dim, src=src)
     num_of_dim = int(num_of_dim)
@@ -253,6 +252,17 @@ def train(train_loader, model, criterion, optimizer, epoch):
             output = [output]
 
         loss = 0.0
+        intermediate = input_var
+        for block_id in range(args.nBlocks):
+            if args.gpu is not None:
+                block = model.module.get_block(block_id)
+                block = torch.nn.DataParallel(block).to(device)
+            else:
+                block = model.get_block(block_id)
+            intermediate = block(intermediate)
+            for j in range(len(intermediate)):
+                loss += 10. * torch.norm(intermediate[j], p=1)/intermediate[j].numel()
+
         for j in range(len(output)):
             loss += criterion(output[j], target_var)
 
@@ -313,6 +323,17 @@ def validate(val_loader, model, criterion):
                 output = [output]
 
             loss = 0.0
+            intermediate = input_var
+            for block_id in range(args.nBlocks):
+                if args.gpu is not None:
+                    block = model.module.get_block(block_id)
+                    block = torch.nn.DataParallel(block).to(device)
+                else:
+                    block = model.get_block(block_id)
+                intermediate = block(intermediate)
+                for j in range(len(intermediate)):
+                    loss += 10. * torch.norm(intermediate[j], p=1)/intermediate[j].numel()
+
             for j in range(len(output)):
                 loss += criterion(output[j], target_var)
 
