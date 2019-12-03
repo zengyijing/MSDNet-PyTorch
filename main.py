@@ -185,10 +185,10 @@ def main():
     return 
 
 def convert_to_sparse_send(dense_tensor, dst):
-    num_of_dim = torch.tensor(len(dense_tensor.shape), dtype=torch.uint8)
-    dist.send(num_of_dim, dst=dst)
-    dims = torch.tensor(dense_tensor.shape, dtype=torch.int16)
-    dist.send(dims, dst=dst)
+    #num_of_dim = torch.tensor(len(dense_tensor.shape), dtype=torch.uint8)
+    #dist.send(num_of_dim, dst=dst)
+    #dims = torch.tensor(dense_tensor.shape, dtype=torch.int16)
+    #dist.send(dims, dst=dst)
     sparse_tensor = dense_tensor.to_sparse()
     nnz = torch.tensor(sparse_tensor._nnz(), dtype=torch.int32)
     dist.send(nnz, dst=dst)
@@ -198,20 +198,20 @@ def convert_to_sparse_send(dense_tensor, dst):
         values = sparse_tensor._values()
         dist.send(values, dst=dst)
     
-def receive_sparse_convert(src=None):
-    num_of_dim = torch.tensor(0, dtype=torch.uint8)
-    dist.recv(num_of_dim, src=src)
-    num_of_dim = int(num_of_dim)
-    dims = torch.zeros(num_of_dim, dtype=torch.int16)
-    dist.recv(dims, src=src)
-    dims = dims.tolist()
+def receive_sparse_convert(dims, src=None):
+    #num_of_dim = torch.tensor(0, dtype=torch.uint8)
+    #dist.recv(num_of_dim, src=src)
+    #num_of_dim = int(num_of_dim)
+    #dims = torch.zeros(num_of_dim, dtype=torch.int16)
+    #dist.recv(dims, src=src)
+    #dims = dims.tolist()
     nnz = torch.tensor(0, dtype=torch.int32)
     dist.recv(nnz, src=src)
     nnz = int(nnz)
     if nnz==0:
         return torch.zeros(dims, dtype=torch.float32)
     else:
-        indices = torch.zeros([num_of_dim, nnz], dtype=torch.int16)
+        indices = torch.zeros([len(dims), nnz], dtype=torch.int16)
         dist.recv(indices, src=src)
         values = torch.zeros(nnz, dtype=torch.float32)
         dist.recv(values, src=src)
@@ -465,7 +465,7 @@ def validate_block2(wholeblock, dims):
                 dim[0] = batch_size
                 temp = torch.zeros(dim, dtype=torch.float32)
                 #dist.recv(temp, src=args.evalblock-1)
-                temp = receive_sparse_convert(src=args.evalblock-1)
+                temp = receive_sparse_convert(dim, src=args.evalblock-1)
                 intermediate_data.append(temp)
             if args.gpu:
                 for i in range(len(intermediate_data)):
