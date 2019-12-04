@@ -217,6 +217,72 @@ def receive_sparse_convert(dims, src=None):
         dist.recv(values, src=src)
         return torch.sparse.FloatTensor(indices.type(torch.int64), values, dims).to_dense()
 
+def combine_intermediate_data(intermediate_data):
+    if len(intermediate_data) == 1:
+        return intermediate_data[0]
+    elif len(intermediate_data) == 2:
+        dim = list(intermediate_data[1].shape)
+        dim[1] = int(dim[1]/4)
+        dim[2] *= 2
+        dim[3] *= 2
+        return torch.cat((intermediate_data[0], intermediate_data[1].reshape(dim)), 1)
+    elif len(intermediate_data) == 3:
+        dim1 = list(intermediate_data[1].shape)
+        dim1[1] = int(dim1[1]/4)
+        dim1[2] *= 2
+        dim1[3] *= 2
+        dim2 = list(intermediate_data[2].shape)
+        dim2[1] = int(dim2[1]/16)
+        dim2[2] *= 4
+        dim2[3] *= 4
+        return torch.cat((intermediate_data[0], intermediate_data[1].reshape(dim1), intermediate_data[2].reshape(dim2)), 1)
+    else:
+        print("combine_intermediate_data input length error")
+        exit(-1)
+
+def get_combined_dim(batch_size, dim):
+    if len(dim) == 1:
+        new_dim = [batch_size, dim[0][1], dim[0][2], dim[0][3]]
+        return new_dim
+    elif len(dim) == 2:
+        new_dim = [batch_size, dim[0][1]+int(dim[1][1]/4), dim[0][2], dim[0][3]]
+        return new_dim
+    elif len(dim) == 3:
+        new_dim = [batch_size, dim[0][1]+int(dim[1][1]/4)+int(dim[2][1]/16), dim[0][2], dim[0][3]]
+        return new_dim
+    else:
+        print("get_combined_dim input length error")
+        exit(-1)
+
+def split_intermediate_data(recv_data, dim):
+    intermediate_data = []
+    if len(dim) == 1:
+        intermediate_data.append(recv_data)
+        return intermediate_data
+    elif len(dim) == 2:
+        intermediate_data = torch.split(recv_data, [dim[0][1], int(dim[1][1]/4)], dim=1)
+        shape = list(intermediate_data[1].shape)
+        shape[1] *= 4
+        shape[2] = int(shape[2]/2)
+        shape[3] = int(shape[3]/2)
+        intermediate_data[1] = intermediate_data[1].reshape(shape)
+        return intermediate_data
+    elif len(dim) == 3:
+        intermediate_data = torch.split(recv_data, [dim[0][1], int(dim[1][1]/4), int(dim[2][1]/16)], dim=1)
+        shape1 = list(intermediate_data[1].shape)
+        shape1[1] *= 4
+        shape1[2] = int(shape1[2]/2)
+        shape1[3] = int(shape1[3]/2)
+        intermediate_data[1] = intermediate_data[1].reshape(shape1)
+        shape2 = list(intermediate_data[2].shape)
+        shape2[1] *= 16
+        shape2[2] = int(shape2[2]/4)
+        shape2[3] = int(shape2[3]/4)
+        intermediate_data[2] = intermediate_data[2].reshape(shape2)
+        return intermediate_data
+    else:
+        print("split_intermediate_data input length error")
+        exit(-1)
 
 def train(train_loader, model, criterion, optimizer, epoch):
     batch_time = AverageMeter()
@@ -398,11 +464,15 @@ def validate_block(val_loader, wholeblock, criterion):
                 batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
                 dist.send(batch_size, dst=1)
                 dist.send(ids[idx], dst=1)
-                for j in range(len(intermediate_data)):
-                    if args.gpu:
-                        intermediate_data[j] = intermediate_data[j].cpu()
+                #for j in range(len(intermediate_data)):
+                    #if args.gpu:
+                        #intermediate_data[j] = intermediate_data[j].cpu()
                     #dist.send(intermediate_data[j][idx], dst=1)
-                    convert_to_sparse_send(intermediate_data[j][idx], dst=1)
+                    #convert_to_sparse_send(intermediate_data[j][idx], dst=1)
+                send_data = combine_intermediate_data(intermediate_data[idx])
+                if args.gpu:
+                    send_data = send_data.cpu()
+                convert_to_sparse_send(send_data, dst=1)
 
                 count = len(confidence.values[idx])
                 while count > 0:
@@ -461,12 +531,15 @@ def validate_block2(wholeblock, dims):
             dist.recv(batch_size, src=args.evalblock-1)
             ids = torch.zeros(batch_size, dtype=torch.int32)
             dist.recv(ids, src=args.evalblock-1)
-            for dim in dims[args.evalblock-1]:
-                dim[0] = batch_size
-                temp = torch.zeros(dim, dtype=torch.float32)
+            #for dim in dims[args.evalblock-1]:
+                #dim[0] = batch_size
+                #temp = torch.zeros(dim, dtype=torch.float32)
                 #dist.recv(temp, src=args.evalblock-1)
-                temp = receive_sparse_convert(dim, src=args.evalblock-1)
-                intermediate_data.append(temp)
+                #temp = receive_sparse_convert(dim, src=args.evalblock-1)
+                #intermediate_data.append(temp)
+            dim = get_combined_dim(int(batch_size), dims[args.evalblock-1])
+            recv_data = receive_sparse_convert(dim, src=args.evalblock-1)
+            intermediate_data = split_intermediate_data(recv_data, dims[args.evalblock-1])
             if args.gpu:
                 for i in range(len(intermediate_data)):
                     intermediate_data[i] = intermediate_data[i].cuda(async=True)
@@ -485,11 +558,15 @@ def validate_block2(wholeblock, dims):
                 batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
                 dist.send(batch_size, dst=args.evalblock+1)
                 dist.send(ids[idx], dst=args.evalblock+1)
-                for j in range(len(further_data)):
-                    if args.gpu:
-                        further_data[j] = further_data[j].cpu()
+                #for j in range(len(further_data)):
+                    #if args.gpu:
+                        #further_data[j] = further_data[j].cpu()
                     #dist.send(further_data[j][idx], dst=args.evalblock+1)
-                    convert_to_sparse_send(further_data[j][idx], dst=args.evalblock+1)
+                    #convert_to_sparse_send(further_data[j][idx], dst=args.evalblock+1)
+                send_data = combine_intermediate_data(further_data[idx])
+                if args.gpu:
+                    send_data = send_data.cpu()
+                convert_to_sparse_send(send_data, dst=args.evalblock+1)
 
             idx = confidence.values >= args.confidence
             if args.evalblock == args.nBlocks-1 or len(confidence.values[idx]) > 0:
