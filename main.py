@@ -284,6 +284,16 @@ def split_intermediate_data(recv_data, dim):
         print("split_intermediate_data input length error")
         exit(-1)
 
+def combine_conf_class(confidence, class_result):
+    conf = torch.clamp(confidence*32767., 0., 32767.).type(torch.int16)
+    class_result = class_result.type(torch.int16)
+    return torch.cat((torch.unsqueeze(conf,0), torch.unsqueeze(class_result,0)))
+
+def split_conf_class(recv_data):
+    conf = recv_data[0].type(torch.float32)/32767.
+    class_result = recv_data[1]
+    return conf, class_result
+
 def train(train_loader, model, criterion, optimizer, epoch):
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -479,10 +489,13 @@ def validate_block(val_loader, wholeblock, criterion):
                     dist.recv(batch_size)
                     ids = torch.zeros(batch_size, dtype=torch.int32)
                     dist.recv(ids)
-                    conf = torch.zeros(batch_size, dtype=torch.float32)
-                    dist.recv(conf)
-                    final_classification = torch.zeros(batch_size, dtype=torch.int64)
-                    dist.recv(final_classification)
+                    #conf = torch.zeros(batch_size, dtype=torch.float32)
+                    #dist.recv(conf)
+                    #final_classification = torch.zeros(batch_size, dtype=torch.int64)
+                    #dist.recv(final_classification)
+                    recv_data = torch.zeros((2,batch_size), dtype=torch.int16)
+                    dist.recv(recv_data)
+                    conf, final_classification = split_conf_class(recv_data)
                     count -= int(batch_size)
 
             loss = criterion(class_result, target_var)
@@ -583,12 +596,15 @@ def validate_block2(wholeblock, dims):
                     class_result = confidence.indices
                 if args.evalblock == args.nBlocks-1:
                     dist.send(ids, dst=0)
-                    dist.send(class_conf, dst=0)
-                    dist.send(class_result, dst=0)
+                    send_data = combine_conf_class(class_conf, class_result)
+                    #dist.send(class_conf, dst=0)
+                    #dist.send(class_result, dst=0)
                 else:
                     dist.send(ids[idx], dst=0)
-                    dist.send(class_conf[idx], dst=0)
-                    dist.send(class_result[idx], dst=0)
+                    send_data = combine_conf_class(class_conf[idx], class_result[idx])
+                    #dist.send(class_conf[idx], dst=0)
+                    #dist.send(class_result[idx], dst=0)
+                dist.send(send_data, dst=0)
 
             # measure elapsed time
             batch_time.update(time.time() - end)
