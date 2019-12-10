@@ -268,7 +268,7 @@ def split_intermediate_data(recv_data, dim):
         intermediate_data[1] = intermediate_data[1].reshape(shape)
         return intermediate_data
     elif len(dim) == 3:
-        intermediate_data = torch.split(recv_data, [dim[0][1], int(dim[1][1]/4), int(dim[2][1]/16)], dim=1)
+        intermediate_data = list(torch.split(recv_data, [dim[0][1], int(dim[1][1]/4), int(dim[2][1]/16)], dim=1))
         shape1 = list(intermediate_data[1].shape)
         shape1[1] *= 4
         shape1[2] = int(shape1[2]/2)
@@ -572,7 +572,8 @@ def validate_block2(wholeblock, dims):
                 batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
                 dist.send(batch_size, dst=args.evalblock+1)
                 dist.send(ids[idx], dst=args.evalblock+1)
-                #for j in range(len(further_data)):
+                for j in range(len(further_data)):
+                    further_data[j] = further_data[j][idx]
                     #if args.gpu:
                         #further_data[j] = further_data[j].cpu()
                     #dist.send(further_data[j][idx], dst=args.evalblock+1)
