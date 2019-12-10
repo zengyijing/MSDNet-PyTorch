@@ -578,7 +578,7 @@ def validate_block2(wholeblock, dims):
                         #further_data[j] = further_data[j].cpu()
                     #dist.send(further_data[j][idx], dst=args.evalblock+1)
                     #convert_to_sparse_send(further_data[j][idx], dst=args.evalblock+1)
-                send_data = combine_intermediate_data(further_data[idx])
+                send_data = combine_intermediate_data(further_data)
                 if args.gpu:
                     send_data = send_data.cpu()
                 convert_to_sparse_send(send_data, dst=args.evalblock+1)
