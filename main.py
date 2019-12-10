@@ -260,7 +260,7 @@ def split_intermediate_data(recv_data, dim):
         intermediate_data.append(recv_data)
         return intermediate_data
     elif len(dim) == 2:
-        intermediate_data = torch.split(recv_data, [dim[0][1], int(dim[1][1]/4)], dim=1)
+        intermediate_data = list(torch.split(recv_data, [dim[0][1], int(dim[1][1]/4)], dim=1))
         shape = list(intermediate_data[1].shape)
         shape[1] *= 4
         shape[2] = int(shape[2]/2)
