@@ -474,12 +474,13 @@ def validate_block(val_loader, wholeblock, criterion):
                 batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
                 dist.send(batch_size, dst=1)
                 dist.send(ids[idx], dst=1)
-                #for j in range(len(intermediate_data)):
+                for j in range(len(intermediate_data)):
+                    intermediate_data[j] = intermediate_data[j][idx]
                     #if args.gpu:
                         #intermediate_data[j] = intermediate_data[j].cpu()
                     #dist.send(intermediate_data[j][idx], dst=1)
                     #convert_to_sparse_send(intermediate_data[j][idx], dst=1)
-                send_data = combine_intermediate_data(intermediate_data[idx])
+                send_data = combine_intermediate_data(intermediate_data)
                 if args.gpu:
                     send_data = send_data.cpu()
                 convert_to_sparse_send(send_data, dst=1)
