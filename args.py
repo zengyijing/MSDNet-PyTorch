@@ -26,8 +26,11 @@ exp_group.add_argument('--seed', default=0, type=int,
                        help='random seed')
 exp_group.add_argument('--gpu', default=None, type=str, help='GPU available.')
 exp_group.add_argument('--master', default=None, type=str, help='IP and port number of master block.')
-exp_group.add_argument('--evalblock', default=None, type=int,
-                       help='block id to evaluate')
+exp_group.add_argument('--worldsize', default=0, type=int, help='world size for distributed inference')
+exp_group.add_argument('--blockids', default=None, type=str,
+                       help='block ids to evaluate')
+exp_group.add_argument('--blockrank', default=0, type=int,
+                       help='block ids to evaluate')
 exp_group.add_argument('--confidence', default=1.0, type=float,
                        help='confidence threshold to send to next block (default: 1.0)')
 

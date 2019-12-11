@@ -48,6 +48,9 @@ else:
 
 torch.manual_seed(args.seed)
 
+if args.blockids:
+    args.blockids = list(map(int, args.blockids.split('-')))
+
 def main():
 
     global args
