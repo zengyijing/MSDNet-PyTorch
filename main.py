@@ -456,7 +456,7 @@ def validate_block(val_loader, block_list, classifier, criterion):
             else:
                 intermediate_data = input_var
                 for block in block_list:
-                    intermediate_data = block_list[0](intermediate_data)
+                    intermediate_data = block(intermediate_data)
             class_result = classifier(intermediate_data)
             softmax = nn.Softmax(dim=1).to(device)
             confidence = softmax(class_result).max(dim=1, keepdim=False)
@@ -558,7 +558,7 @@ def validate_block2(block_list, classifier, dims):
             else:
                 further_data = intermediate_data
                 for block in block_list:
-                    further_data = block_list[0](further_data)
+                    further_data = block(further_data)
             class_result = classifier(further_data)
             softmax = nn.Softmax(dim=1).to(device)
             confidence = softmax(class_result).max(dim=1, keepdim=False)
