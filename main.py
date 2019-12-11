@@ -127,13 +127,12 @@ def main():
             else:
                 if len(args.blockids)>1:
                     for i in range(args.blockids[0], args.blockids[1]+1):
-                        block = model.module.get_block(i)
-                        block_list.append(torch.nn.DataParallel(block).to(device))
+                        block = model.get_block(i)
+                        block_list.append(block.to(device))
                 else:
-                    block = model.module.get_block(args.blockids[0])
-                    block_list.append(torch.nn.DataParallel(block).to(device))
-                classifier = model.module.get_classifier(args.blockids[-1])
-                classifier = torch.nn.DataParallel(classifier).to(device)
+                    block = model.get_block(args.blockids[0])
+                    block_list.append(block)
+                classifier = model.get_classifier(args.blockids[-1])
                 dims = model.get_dims()
             if args.blockids[0] == 0:
                 validate_block(val_loader, block_list, classifier, criterion)
