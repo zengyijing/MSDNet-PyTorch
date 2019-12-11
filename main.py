@@ -542,9 +542,9 @@ def validate_block2(block_list, classifier, dims):
             dist.recv(batch_size, src=args.blockrank-1)
             ids = torch.zeros(batch_size, dtype=torch.int32)
             dist.recv(ids, src=args.blockrank-1)
-            dim = get_combined_dim(int(batch_size), dims[args.blockids[0]])
+            dim = get_combined_dim(int(batch_size), dims[args.blockids[0]-1])
             recv_data = receive_sparse_convert(dim, src=args.blockrank-1)
-            intermediate_data = split_intermediate_data(recv_data, dims[args.blockids[0]])
+            intermediate_data = split_intermediate_data(recv_data, dims[args.blockids[0]-1])
             if args.gpu:
                 for i in range(len(intermediate_data)):
                     intermediate_data[i] = intermediate_data[i].cuda(async=True)
