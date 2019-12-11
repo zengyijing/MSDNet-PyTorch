@@ -217,6 +217,11 @@ class MSDNet(nn.Module):
         print("building network of steps: ")
         print(self.steps, n_layers_all)
 
+        if args.data.startswith('cifar'):
+            IM_SIZE = 32
+        else:
+            IM_SIZE = 224
+
         nIn = args.nChannels
         for i in range(self.nBlocks):
             print(' ********************** Block {} '
@@ -238,6 +243,9 @@ class MSDNet(nn.Module):
                     self._build_classifier_imagenet(nIn * args.grFactor[-1], 1000))
             else:
                 raise NotImplementedError
+        
+        sample = torch.zeros((args.batch_size, 3, IM_SIZE, IM_SIZE), dtype=torch.float32)
+        self.dims = []
 
         for m in self.blocks:
             if hasattr(m, '__iter__'):
@@ -245,6 +253,11 @@ class MSDNet(nn.Module):
                     self._init_weights(_m)
             else:
                 self._init_weights(m)
+            sample = m(sample)
+            temp = []
+            for i in range(len(sample)):
+                temp.append(list(sample[i].size()))
+            self.dims.append(temp)
 
         for m in self.classifier:
             if hasattr(m, '__iter__'):
@@ -344,6 +357,9 @@ class MSDNet(nn.Module):
 
     def get_classifier(self, i):
         return self.classifier[i]
+
+    def get_dims(self):
+        return self.dims
 
 class MSDBlock(nn.Module):
     def __init__(self, block, classifier):
