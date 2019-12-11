@@ -109,26 +109,36 @@ def main():
                 torch.nn.DataParallel(model).load_state_dict(state_dict)  #for cpu running setting loads gpu learned model
             else:
                 model.module.load_state_dict(state_dict) #for gpu running setting loads cpu learned model
-        if args.evalblock is not None:
-            assert args.evalblock < args.nBlocks
+        if args.blockids is not None:
+            assert args.blockids[-1] < args.nBlocks
             dist.init_process_group(backend='gloo', init_method="tcp://"+args.master, rank=args.blockrank, world_size=args.worldsize)
+            block_list = []
             if args.gpu is not None:
-                block = model.module.get_block(args.evalblock)
-                classifier = model.module.get_classifier(args.evalblock)
+                if len(args.blockids)>1:
+                    for i in range(args.blockids[0], args.blockids[1]+1):
+                        block = model.module.get_block(i)
+                        block_list.append(torch.nn.DataParallel(block).to(device))
+                else:
+                    block = model.module.get_block(args.blockids[0])
+                    block_list.append(torch.nn.DataParallel(block).to(device))
+                classifier = model.module.get_classifier(args.blockids[-1])
+                classifier = torch.nn.DataParallel(classifier).to(device)
                 dims = model.module.get_dims()
             else:
-                block = model.get_block(args.evalblock)
-                classifier = model.get_classifier(args.evalblock)
+                if len(args.blockids)>1:
+                    for i in range(args.blockids[0], args.blockids[1]+1):
+                        block = model.module.get_block(i)
+                        block_list.append(torch.nn.DataParallel(block).to(device))
+                else:
+                    block = model.module.get_block(args.blockids[0])
+                    block_list.append(torch.nn.DataParallel(block).to(device))
+                classifier = model.module.get_classifier(args.blockids[-1])
+                classifier = torch.nn.DataParallel(classifier).to(device)
                 dims = model.get_dims()
-            wholeblock = models.MSDBlock(block, classifier)
-            if args.gpu is not None:
-                wholeblock = torch.nn.DataParallel(wholeblock).to(device)
+            if args.blockids[0] == 0:
+                validate_block(val_loader, block_list, classifier, criterion)
             else:
-                wholeblock.to(device)
-            if args.evalblock == 0:
-                validate_block(val_loader, wholeblock, criterion)
-            else:
-                validate_block2(wholeblock,dims)
+                validate_block2(block_list, classifier, dims)
             return
 
         if args.evalmode == 'anytime':
@@ -418,7 +428,7 @@ def validate(val_loader, model, criterion, epoch=None):
         print(' * prec@1 {top1.avg:.3f} prec@5 {top5.avg:.3f}'.format(top1=top1[j], top5=top5[j]))
     return losses.avg, top1[-1].avg, top5[-1].avg
 
-def validate_block(val_loader, wholeblock, criterion):
+def validate_block(val_loader, block_list, classifier, criterion):
     batch_time = AverageMeter()
     losses = AverageMeter()
     data_time = AverageMeter()
@@ -426,7 +436,9 @@ def validate_block(val_loader, wholeblock, criterion):
     top1 = AverageMeter()
     top5 = AverageMeter()
 
-    wholeblock.eval()
+    for block in block_list:
+        block.eval()
+    classifier.eval()
 
     end = time.time()
     with torch.no_grad():
@@ -440,12 +452,16 @@ def validate_block(val_loader, wholeblock, criterion):
 
             data_time.update(time.time() - end)
 
-            output = wholeblock(input_var)
-            class_result = output[0]
+            if len(block_list)==1:
+                intermediate_data = block_list[0](input_var)
+            else:
+                intermediate_data = input_var
+                for block in block_list:
+                    intermediate_data = block_list[0](intermediate_data)
+            class_result = classifier(intermediate_data)
             softmax = nn.Softmax(dim=1).to(device)
             confidence = softmax(class_result).max(dim=1, keepdim=False)
-            intermediate_data = output[1]
-            #print(confidence)
+
             ids = torch.zeros(args.batch_size, dtype=torch.int32)
             for j in range(args.batch_size):
                 ids[j] = i * args.batch_size + j
@@ -505,7 +521,7 @@ def validate_block(val_loader, wholeblock, criterion):
     print(' * prec@1 {top1.avg:.3f} prec@5 {top5.avg:.3f}'.format(top1=top1, top5=top5))
     return losses.avg, top1.avg, top5.avg
 
-def validate_block2(wholeblock, dims):
+def validate_block2(block_list, classifier, dims):
     batch_time = AverageMeter()
     losses = AverageMeter()
     data_time = AverageMeter()
@@ -513,7 +529,9 @@ def validate_block2(wholeblock, dims):
     top1 = AverageMeter()
     top5 = AverageMeter()
 
-    wholeblock.eval()
+    for block in block_list:
+        block.eval()
+    classifier.eval()
 
     end = time.time()
     with torch.no_grad():
@@ -522,18 +540,12 @@ def validate_block2(wholeblock, dims):
         while count<max_count:
             intermediate_data = []
             batch_size = torch.tensor(0, dtype=torch.int8)
-            dist.recv(batch_size, src=args.evalblock-1)
+            dist.recv(batch_size, src=args.blockrank-1)
             ids = torch.zeros(batch_size, dtype=torch.int32)
-            dist.recv(ids, src=args.evalblock-1)
-            #for dim in dims[args.evalblock-1]:
-                #dim[0] = batch_size
-                #temp = torch.zeros(dim, dtype=torch.float32)
-                #dist.recv(temp, src=args.evalblock-1)
-                #temp = receive_sparse_convert(dim, src=args.evalblock-1)
-                #intermediate_data.append(temp)
-            dim = get_combined_dim(int(batch_size), dims[args.evalblock-1])
-            recv_data = receive_sparse_convert(dim, src=args.evalblock-1)
-            intermediate_data = split_intermediate_data(recv_data, dims[args.evalblock-1])
+            dist.recv(ids, src=args.blockrank-1)
+            dim = get_combined_dim(int(batch_size), dims[args.blockrank-1])
+            recv_data = receive_sparse_convert(dim, src=args.blockrank-1)
+            intermediate_data = split_intermediate_data(recv_data, dims[args.blockrank-1])
             if args.gpu:
                 for i in range(len(intermediate_data)):
                     intermediate_data[i] = intermediate_data[i].cuda(async=True)
@@ -542,30 +554,31 @@ def validate_block2(wholeblock, dims):
 
             data_time.update(time.time() - end)
 
-            output = wholeblock(intermediate_data)
-            class_result = output[0]
+            if len(block_list)==1:
+                further_data = block_list[0](intermediate_data)
+            else:
+                further_data = intermediate_data
+                for block in block_list:
+                    further_data = block_list[0](further_data)
+            class_result = classifier(further_data)
             softmax = nn.Softmax(dim=1).to(device)
             confidence = softmax(class_result).max(dim=1, keepdim=False)
-            further_data = output[1]
+
             idx = confidence.values < args.confidence
-            if args.evalblock < args.nBlocks-1 and len(confidence.values[idx]) > 0:
+            if args.blockids[-1] < args.nBlocks-1 and len(confidence.values[idx]) > 0:
                 batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
-                dist.send(batch_size, dst=args.evalblock+1)
-                dist.send(ids[idx], dst=args.evalblock+1)
+                dist.send(batch_size, dst=args.blockrank+1)
+                dist.send(ids[idx], dst=args.blockrank+1)
                 for j in range(len(further_data)):
                     further_data[j] = further_data[j][idx]
-                    #if args.gpu:
-                        #further_data[j] = further_data[j].cpu()
-                    #dist.send(further_data[j][idx], dst=args.evalblock+1)
-                    #convert_to_sparse_send(further_data[j][idx], dst=args.evalblock+1)
                 send_data = combine_intermediate_data(further_data)
                 if args.gpu:
                     send_data = send_data.cpu()
-                convert_to_sparse_send(send_data, dst=args.evalblock+1)
+                convert_to_sparse_send(send_data, dst=args.blockrank+1)
 
             idx = confidence.values >= args.confidence
-            if args.evalblock == args.nBlocks-1 or len(confidence.values[idx]) > 0:
-                if args.evalblock == args.nBlocks-1:
+            if args.blockids[-1] == args.nBlocks-1 or len(confidence.values[idx]) > 0:
+                if args.blockids[-1] == args.nBlocks-1:
                     batch_size = torch.tensor(len(confidence.values), dtype=torch.int8)
                 else:
                     batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
@@ -576,16 +589,12 @@ def validate_block2(wholeblock, dims):
                 else:
                     class_conf = confidence.values
                     class_result = confidence.indices
-                if args.evalblock == args.nBlocks-1:
+                if args.blockids[-1] == args.nBlocks-1:
                     dist.send(ids, dst=0)
                     send_data = combine_conf_class(class_conf, class_result)
-                    #dist.send(class_conf, dst=0)
-                    #dist.send(class_result, dst=0)
                 else:
                     dist.send(ids[idx], dst=0)
                     send_data = combine_conf_class(class_conf[idx], class_result[idx])
-                    #dist.send(class_conf[idx], dst=0)
-                    #dist.send(class_result[idx], dst=0)
                 dist.send(send_data, dst=0)
 
             # measure elapsed time
