@@ -108,7 +108,7 @@ def main():
                 model.module.load_state_dict(state_dict) #for gpu running setting loads cpu learned model
         if args.evalblock is not None:
             assert args.evalblock < args.nBlocks
-            dist.init_process_group(backend='gloo', init_method="tcp://"+args.master, rank=args.evalblock, world_size=args.nBlocks)
+            dist.init_process_group(backend='gloo', init_method="tcp://"+args.master, rank=args.blockrank, world_size=args.worldsize)
             sample = torch.zeros((args.batch_size, 3, IM_SIZE, IM_SIZE), dtype=torch.float32)
             dims = []
             if args.gpu is not None:
@@ -154,7 +154,7 @@ def main():
 
         train_loss, train_prec1, train_prec5, lr = train(train_loader, model, criterion, optimizer, epoch)
 
-        val_loss, val_prec1, val_prec5 = validate(val_loader, model, criterion)
+        val_loss, val_prec1, val_prec5 = validate(val_loader, model, criterion, epoch)
 
         scores.append(('{}\t{:.3f}' + '\t{:.4f}' * 6)
                       .format(epoch, lr, train_loss, val_loss,
@@ -323,21 +323,29 @@ def train(train_loader, model, criterion, optimizer, epoch):
         input_var = torch.autograd.Variable(input)
         target_var = torch.autograd.Variable(target)
 
-        output = model(input_var)
-        if not isinstance(output, list):
-            output = [output]
-
+        #output = model(input_var)
+        #if not isinstance(output, list):
+        #    output = [output]
+        output = []
         loss = 0.0
+        
+        weight = [10.]*args.nBlocks
+        weight[-1] = 0.
         intermediate = input_var
         for block_id in range(args.nBlocks):
             if args.gpu is not None:
                 block = model.module.get_block(block_id)
                 block = torch.nn.DataParallel(block).to(device)
+                classifier = model.module.get_classifier(block_id)
+                classifier = torch.nn.DataParallel(classifier).to(device)
             else:
                 block = model.get_block(block_id)
+                classifier = model.get_classifier(block_id)
             intermediate = block(intermediate)
-            for j in range(len(intermediate)):
-                loss += 10. * torch.norm(intermediate[j], p=1)/intermediate[j].numel()
+            output.append(classifier(intermediate))
+            if epoch>=args.epochs*3/4:
+                for j in range(len(intermediate)):
+                    loss += weight[block_id] * torch.norm(intermediate[j], p=1)/intermediate[j].numel()
 
         for j in range(len(output)):
             loss += criterion(output[j], target_var)
@@ -371,7 +379,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
 
     return losses.avg, top1[-1].avg, top5[-1].avg, running_lr
 
-def validate(val_loader, model, criterion):
+def validate(val_loader, model, criterion, epoch=None):
     batch_time = AverageMeter()
     losses = AverageMeter()
     data_time = AverageMeter()
@@ -394,21 +402,29 @@ def validate(val_loader, model, criterion):
 
             data_time.update(time.time() - end)
 
-            output = model(input_var)
-            if not isinstance(output, list):
-                output = [output]
-
+            #output = model(input_var)
+            #if not isinstance(output, list):
+            #    output = [output]
+            output = []
             loss = 0.0
+
+            weight = [10.]*args.nBlocks
+            weight[-1] = 0.
             intermediate = input_var
             for block_id in range(args.nBlocks):
                 if args.gpu is not None:
                     block = model.module.get_block(block_id)
                     block = torch.nn.DataParallel(block).to(device)
+                    classifier = model.module.get_classifier(block_id)
+                    classifier = torch.nn.DataParallel(classifier).to(device)
                 else:
                     block = model.get_block(block_id)
+                    classifier = model.get_classifier(block_id)
                 intermediate = block(intermediate)
-                for j in range(len(intermediate)):
-                    loss += 10. * torch.norm(intermediate[j], p=1)/intermediate[j].numel()
+                output.append(classifier(intermediate))
+                if epoch is not None and epoch>=args.epochs*3/4:
+                    for j in range(len(intermediate)):
+                        loss += weight[block_id] * torch.norm(intermediate[j], p=1)/intermediate[j].numel()
 
             for j in range(len(output)):
                 loss += criterion(output[j], target_var)
@@ -712,3 +728,4 @@ def adjust_learning_rate(optimizer, epoch, args, batch=None,
 
 if __name__ == '__main__':
     main()
+
