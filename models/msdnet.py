@@ -349,7 +349,7 @@ class MSDNet(nn.Module):
         res = []
         for i in range(self.nBlocks):
             x = self.blocks[i](x)
-            res.append(self.classifier[i](x))
+            res.append((self.classifier[i](x),x))
         return res
 
     def get_block(self, i):

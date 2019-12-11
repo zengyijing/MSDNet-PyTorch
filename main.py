@@ -313,37 +313,24 @@ def train(train_loader, model, criterion, optimizer, epoch):
         input_var = torch.autograd.Variable(input)
         target_var = torch.autograd.Variable(target)
 
-        #output = model(input_var)
-        #if not isinstance(output, list):
-        #    output = [output]
-        output = []
+        output = model(input_var)
+        if not isinstance(output, list):
+            output = [output]
+        #output = []
         loss = 0.0
         
         weight = [10.]*args.nBlocks
         weight[-1] = 0.
-        intermediate = input_var
-        for block_id in range(args.nBlocks):
-            if args.gpu is not None:
-                block = model.module.get_block(block_id)
-                block = torch.nn.DataParallel(block).to(device)
-                classifier = model.module.get_classifier(block_id)
-                classifier = torch.nn.DataParallel(classifier).to(device)
-            else:
-                block = model.get_block(block_id)
-                classifier = model.get_classifier(block_id)
-            intermediate = block(intermediate)
-            output.append(classifier(intermediate))
-            if epoch>=args.epochs*3/4:
-                for j in range(len(intermediate)):
-                    loss += weight[block_id] * torch.norm(intermediate[j], p=1)/intermediate[j].numel()
-
+        if epoch>=args.epochs*3/4:
+            for j in range(len(output)):
+                loss += weight[j] * torch.norm(output[j][1], p=1)/output[j][1].numel()
         for j in range(len(output)):
-            loss += criterion(output[j], target_var)
+            loss += criterion(output[j][0], target_var)
 
         losses.update(loss.item(), input.size(0))
 
         for j in range(len(output)):
-            prec1, prec5 = accuracy(output[j].data, target, topk=(1, 5))
+            prec1, prec5 = accuracy(output[j][0].data, target, topk=(1, 5))
             top1[j].update(prec1.item(), input.size(0))
             top5[j].update(prec5.item(), input.size(0))
 
@@ -392,37 +379,24 @@ def validate(val_loader, model, criterion, epoch=None):
 
             data_time.update(time.time() - end)
 
-            #output = model(input_var)
-            #if not isinstance(output, list):
-            #    output = [output]
-            output = []
+            output = model(input_var)
+            if not isinstance(output, list):
+                output = [output]
+            #output = []
             loss = 0.0
 
             weight = [10.]*args.nBlocks
             weight[-1] = 0.
-            intermediate = input_var
-            for block_id in range(args.nBlocks):
-                if args.gpu is not None:
-                    block = model.module.get_block(block_id)
-                    block = torch.nn.DataParallel(block).to(device)
-                    classifier = model.module.get_classifier(block_id)
-                    classifier = torch.nn.DataParallel(classifier).to(device)
-                else:
-                    block = model.get_block(block_id)
-                    classifier = model.get_classifier(block_id)
-                intermediate = block(intermediate)
-                output.append(classifier(intermediate))
-                if epoch is not None and epoch>=args.epochs*3/4:
-                    for j in range(len(intermediate)):
-                        loss += weight[block_id] * torch.norm(intermediate[j], p=1)/intermediate[j].numel()
-
+            if epoch is not None and epoch>=args.epochs*3/4:
+                for j in range(len(output)):
+                    loss += weight[j] * torch.norm(output[j][1], p=1)/output[j][1].numel()
             for j in range(len(output)):
-                loss += criterion(output[j], target_var)
+                loss += criterion(output[j][0], target_var)
 
             losses.update(loss.item(), input.size(0))
 
             for j in range(len(output)):
-                prec1, prec5 = accuracy(output[j].data, target, topk=(1, 5))
+                prec1, prec5 = accuracy(output[j][0].data, target, topk=(1, 5))
                 top1[j].update(prec1.item(), input.size(0))
                 top5[j].update(prec5.item(), input.size(0))
 
