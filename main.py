@@ -14,6 +14,9 @@ from dataloader import get_dataloaders
 from args import arg_parser
 from adaptive_inference import dynamic_evaluate
 import models
+from models import AutoCoder
+from models import AutoEncoder
+from models import AutoDecoder
 from op_counter import measure_model
 
 args = arg_parser.parse_args()
@@ -109,6 +112,29 @@ def main():
                 torch.nn.DataParallel(model).load_state_dict(state_dict)  #for cpu running setting loads gpu learned model
             else:
                 model.module.load_state_dict(state_dict) #for gpu running setting loads cpu learned model
+        if args.train_autocoder is True:
+            if args.gpu is not None:
+                dims = model.module.get_dims()
+            else:
+                dims = model.get_dims()
+            autocoder_dim = 0
+            factor = 1
+            print(dims)
+            for i in range(len(dims[args.autocoder_id])):
+              autocoder_dim += int(dims[args.autocoder_id][i][1]/factor)
+              factor*=4
+            autocoder = AutoCoder(args.autocoder_id, autocoder_dim, args.autocoder_rate)
+            if args.gpu is not None:
+                autocoder = torch.nn.DataParallel(autocoder).to(device)
+            else:
+                autocoder.to(device)
+            autocoder_criterion = nn.MSELoss().to(device)
+
+            autocoder_optimizer = torch.optim.SGD(autocoder.parameters(), args.lr,
+                                momentum=args.momentum,
+                                weight_decay=args.weight_decay)
+            train_autocoder(autocoder, model, autocoder_criterion, autocoder_optimizer, train_loader, val_loader, args)
+            return
         if args.blockids is not None:
             assert args.blockids[-1] < args.nBlocks
             dist.init_process_group(backend='gloo', init_method="tcp://"+args.master, rank=args.blockrank, world_size=args.worldsize)
@@ -182,6 +208,161 @@ def main():
     validate(test_loader, model, criterion)
 
     return 
+
+def train_autocoder(autocoder, model, autocoder_criterion, autocoder_optimizer, train_loader, val_loader, args):
+    """
+    scores = ['epoch\tlr\ttrain_loss\tval_loss\ttrain_prec1'
+              '\tval_prec1\ttrain_prec5\tval_prec5']
+
+    for epoch in range(args.start_epoch, args.epochs):
+
+        train_loss, train_prec1, train_prec5, lr = train(train_loader, model, criterion, optimizer, epoch)
+
+        val_loss, val_prec1, val_prec5 = validate(val_loader, model, criterion, epoch)
+
+        scores.append(('{}\t{:.3f}' + '\t{:.4f}' * 6)
+                      .format(epoch, lr, train_loss, val_loss,
+                              train_prec1, val_prec1, train_prec5, val_prec5))
+
+        is_best = val_prec1 > best_prec1
+        if is_best:
+            best_prec1 = val_prec1
+            best_epoch = epoch
+            print('Best var_prec1 {}'.format(best_prec1))
+
+        model_filename = 'checkpoint_%03d.pth.tar' % epoch
+        save_checkpoint({
+            'epoch': epoch,
+            'arch': args.arch,
+            'state_dict': autocoder.state_dict(),
+            'best_prec1': best_prec1,
+            'optimizer': optimizer.state_dict(),
+        }, args, is_best, model_filename, scores)
+
+    print('Best val_prec1: {:.4f} at epoch {}'.format(best_prec1, best_epoch))
+    """
+    best_loss = 1.0
+    model.eval()
+    scores = ['epoch\tlr\ttrain_loss\tval_loss']
+    for epoch in range(args.start_epoch, args.epochs):
+        train_loss, lr = train_autocoder_one_epoch(train_loader, model, autocoder, autocoder_criterion, autocoder_optimizer, epoch)
+        val_loss = validate_autocoder(val_loader, model, autocoder, autocoder_criterion, epoch)
+        autocoder_filename = 'autocoder_%d_checkpoint_%03d.pth.tar' % (args.autocoder_id, epoch)
+        scores.append(('{}\t{:.3f}' + '\t{:.4f}' * 2)
+                      .format(epoch, lr, train_loss, val_loss))
+        is_best = val_loss > best_loss
+        if is_best:
+            best_loss = val_loss
+            best_epoch = epoch
+            print('Best var_loss {}'.format(best_loss))
+
+        save_autocoder_checkpoint({
+            'epoch': epoch,
+            'split_id': args.autocoder_id,
+            'state_dict': autocoder.state_dict(),
+            'best_loss': best_loss,
+            'optimizer': autocoder_optimizer.state_dict(),
+        }, args, is_best, autocoder_filename, scores)
+
+def train_autocoder_one_epoch(train_loader, model, autocoder, autocoder_criterion, autocoder_optimizer, epoch):
+    batch_time = AverageMeter()
+    data_time = AverageMeter()
+    losses = AverageMeter()
+
+    # switch to train mode
+    autocoder.train()
+
+    end = time.time()
+
+    running_lr = None
+    for i, (input, target) in enumerate(train_loader):
+        lr = adjust_learning_rate(autocoder_optimizer, epoch, args, batch=i,
+                                  nBatch=len(train_loader), method=args.lr_type)
+        input = input.to(device)
+
+        input_var = torch.autograd.Variable(input)
+        if running_lr is None:
+            running_lr = lr
+
+        for block_id in range(args.autocoder_id+1):
+            if args.gpu is None:
+                block = model.get_block(block_id)
+            else:
+                block = model.module.get_block(block_id).to(device)
+            input_var = block(input_var)
+        input_var = combine_intermediate_data(input_var)
+
+        data_time.update(time.time() - end)
+        output = autocoder(input_var) 
+        loss = 0.0
+
+        loss += autocoder_criterion(output, input_var)
+
+        losses.update(loss.item(), input.size(0))
+
+        # compute gradient and do SGD step
+        autocoder_optimizer.zero_grad()
+        loss.backward()
+        autocoder_optimizer.step()
+
+        # measure elapsed time
+        batch_time.update(time.time() - end)
+        end = time.time()
+
+        if i % args.print_freq == 0:
+            print('Epoch: [{0}][{1}/{2}]\t'
+                  'Time {batch_time.avg:.3f}\t'
+                  'Data {data_time.avg:.3f}\t'
+                  'Loss {loss.val:.4f}\t'.format(
+                    epoch, i + 1, len(train_loader),
+                    batch_time=batch_time, data_time=data_time,
+                    loss=losses))
+
+    return losses.avg, running_lr
+
+def validate_autocoder(val_loader, model, autocoder, autocoder_criterion, epoch=None):
+    batch_time = AverageMeter()
+    losses = AverageMeter()
+    data_time = AverageMeter()
+
+    autocoder.eval()
+
+    end = time.time()
+    with torch.no_grad():
+        for i, (input, target) in enumerate(val_loader):
+            input = input.to(device)
+
+            input_var = torch.autograd.Variable(input)
+
+            for block_id in range(args.autocoder_id+1):
+                if args.gpu is None:
+                    block = model.get_block(block_id)
+                else:
+                    block = model.module.get_block(block_id).to(device)
+                input_var = block(input_var)
+            input_var = combine_intermediate_data(input_var)
+
+            data_time.update(time.time() - end)
+
+            output = autocoder(input_var)
+            loss = 0.0
+
+            loss += autocoder_criterion(output, input_var)
+            losses.update(loss.item(), input.size(0))
+
+            # measure elapsed time
+            batch_time.update(time.time() - end)
+            end = time.time()
+
+            if i % args.print_freq == 0:
+                print('Epoch: [{0}/{1}]\t'
+                      'Time {batch_time.avg:.3f}\t'
+                      'Data {data_time.avg:.3f}\t'
+                      'Loss {loss.val:.4f}'.format(
+                        i + 1, len(val_loader),
+                        batch_time=batch_time, data_time=data_time,
+                        loss=losses))
+    return losses.avg
 
 def convert_to_sparse_send(dense_tensor, dst):
     #num_of_dim = torch.tensor(len(dense_tensor.shape), dtype=torch.uint8)
@@ -608,6 +789,29 @@ def validate_block2(block_list, classifier, dims):
                         batch_time=batch_time, data_time=data_time))
             count += 1
 
+def save_autocoder_checkpoint(state, args, is_best, filename, result):
+    print(args)
+    result_filename = os.path.join(args.save, 'autocoder_'+str(args.autocoder_id)+'_scores.tsv')
+    model_dir = os.path.join(args.save, 'save_models')
+    latest_filename = os.path.join(model_dir, 'autocoder_'+str(args.autocoder_id)+'_latest.txt')
+    model_filename = os.path.join(model_dir, filename)
+    best_filename = os.path.join(model_dir, 'autocoder_'+str(args.autocoder_id)+'_best.pth.tar')
+    os.makedirs(args.save, exist_ok=True)
+    os.makedirs(model_dir, exist_ok=True)
+    print("=> saving checkpoint '{}'".format(model_filename))
+
+    torch.save(state, model_filename)
+
+    with open(result_filename, 'w') as f:
+        print('\n'.join(result), file=f)
+
+    with open(latest_filename, 'w') as fout:
+        fout.write(model_filename)
+    if is_best:
+        shutil.copyfile(model_filename, best_filename)
+
+    print("=> saved checkpoint '{}'".format(model_filename))
+    return
 
 def save_checkpoint(state, args, is_best, filename, result):
     print(args)

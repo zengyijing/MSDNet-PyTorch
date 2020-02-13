@@ -18,6 +18,11 @@ exp_group.add_argument('--resume', action='store_true',
 exp_group.add_argument('--evalmode', default=None,
                        choices=['anytime', 'dynamic'],
                        help='which mode to evaluate')
+exp_group.add_argument('--train-autocoder', default=False, type=bool)
+exp_group.add_argument('--autocoder-id', default=0, type=int,
+                       help='autocoder id to train')
+exp_group.add_argument('--autocoder-rate', default=0.75, type=float,
+                       help='autocoder rate')
 exp_group.add_argument('--evaluate-from', default=None, type=str, metavar='PATH',
                        help='path to saved checkpoint (default: none)')
 exp_group.add_argument('--print-freq', '-p', default=10, type=int,

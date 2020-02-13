@@ -372,3 +372,58 @@ class MSDBlock(nn.Module):
         res = self.classifier(x)
         return [res,x]
 
+class AutoCoder(nn.Module):
+    def __init__(self, split_id, nIn, rate):
+        super(AutoCoder, self).__init__()
+        self.split_id = split_id
+        encoder_layer = []
+        mid = max(int(nIn*rate), 1)
+        last = max(int(nIn*rate*rate), 1)
+        encoder_layer.append(nn.Conv2d(nIn, mid, kernel_size=1, stride=1, padding=0, bias=False))
+        encoder_layer.append(nn.BatchNorm2d(mid))
+        encoder_layer.append(nn.ReLU(True))
+        encoder_layer.append(nn.Conv2d(mid, last, kernel_size=1, stride=1, padding=0, bias=False))
+        encoder_layer.append(nn.BatchNorm2d(last))
+        encoder_layer.append(nn.ReLU(True))
+        self.encoder = nn.Sequential(*encoder_layer)
+
+        decoder_layer = []
+        decoder_layer.append(nn.ConvTranspose2d(last, mid, kernel_size=1, stride=1, padding=0, bias=False))
+        decoder_layer.append(nn.BatchNorm2d(mid))
+        decoder_layer.append(nn.ReLU(True))
+        decoder_layer.append(nn.ConvTranspose2d(mid, nIn, kernel_size=1, stride=1, padding=0, bias=False))
+        decoder_layer.append(nn.BatchNorm2d(nIn))
+        decoder_layer.append(nn.ReLU(True))
+        self.decoder = nn.Sequential(*decoder_layer)
+
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.decoder(x)
+        return x
+
+    def get_split_id(self):
+        return self.split_id
+
+    def get_encoder(self):
+        return self.encoder
+
+    def get_decoder(self):
+        return self.decoder
+
+class AutoEncoder(nn.Module):
+    def __init__(self, encoder):
+        super(AutoEncoder, self).__init__()
+        self.encoder = encoder
+
+    def forward(self, x):
+        x = self.encoder(x)
+        return x
+
+class AutoDecoder(nn.Module):
+    def __init__(self, decoder):
+        super(AutoDecoder, self).__init__()
+        self.decoder = decoder
+
+    def forward(self, x):
+        x = self.decoder(x)
+        return x
