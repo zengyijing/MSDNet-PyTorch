@@ -133,7 +133,15 @@ def main():
             autocoder_optimizer = torch.optim.SGD(autocoder.parameters(), args.lr,
                                 momentum=args.momentum,
                                 weight_decay=args.weight_decay)
-            train_autocoder(autocoder, model, autocoder_criterion, autocoder_optimizer, train_loader, val_loader, args)
+            best_loss = 1.0
+            if args.resume:
+                autocoder_checkpoint = load_autocoder_checkpoint(args)
+                if autocoder_checkpoint is not None:
+                    args.start_epoch = autocoder_checkpoint['epoch'] + 1
+                    best_loss = autocoder_checkpoint['best_loss']
+                    autocoder.load_state_dict(autocoder_checkpoint['state_dict'])
+                    autocoder_optimizer.load_state_dict(autocoder_checkpoint['optimizer'])
+            train_autocoder(autocoder, model, autocoder_criterion, autocoder_optimizer, train_loader, val_loader, args, best_loss)
             return
         if args.blockids is not None:
             assert args.blockids[-1] < args.nBlocks
@@ -209,39 +217,7 @@ def main():
 
     return 
 
-def train_autocoder(autocoder, model, autocoder_criterion, autocoder_optimizer, train_loader, val_loader, args):
-    """
-    scores = ['epoch\tlr\ttrain_loss\tval_loss\ttrain_prec1'
-              '\tval_prec1\ttrain_prec5\tval_prec5']
-
-    for epoch in range(args.start_epoch, args.epochs):
-
-        train_loss, train_prec1, train_prec5, lr = train(train_loader, model, criterion, optimizer, epoch)
-
-        val_loss, val_prec1, val_prec5 = validate(val_loader, model, criterion, epoch)
-
-        scores.append(('{}\t{:.3f}' + '\t{:.4f}' * 6)
-                      .format(epoch, lr, train_loss, val_loss,
-                              train_prec1, val_prec1, train_prec5, val_prec5))
-
-        is_best = val_prec1 > best_prec1
-        if is_best:
-            best_prec1 = val_prec1
-            best_epoch = epoch
-            print('Best var_prec1 {}'.format(best_prec1))
-
-        model_filename = 'checkpoint_%03d.pth.tar' % epoch
-        save_checkpoint({
-            'epoch': epoch,
-            'arch': args.arch,
-            'state_dict': autocoder.state_dict(),
-            'best_prec1': best_prec1,
-            'optimizer': optimizer.state_dict(),
-        }, args, is_best, model_filename, scores)
-
-    print('Best val_prec1: {:.4f} at epoch {}'.format(best_prec1, best_epoch))
-    """
-    best_loss = 1.0
+def train_autocoder(autocoder, model, autocoder_criterion, autocoder_optimizer, train_loader, val_loader, args, best_loss):
     model.eval()
     scores = ['epoch\tlr\ttrain_loss\tval_loss']
     for epoch in range(args.start_epoch, args.epochs):
@@ -840,6 +816,19 @@ def save_checkpoint(state, args, is_best, filename, result):
 def load_checkpoint(args):
     model_dir = os.path.join(args.save, 'save_models')
     latest_filename = os.path.join(model_dir, 'latest.txt')
+    if os.path.exists(latest_filename):
+        with open(latest_filename, 'r') as fin:
+            model_filename = fin.readlines()[0].strip()
+    else:
+        return None
+    print("=> loading checkpoint '{}'".format(model_filename))
+    state = torch.load(model_filename, map_location=device)
+    print("=> loaded checkpoint '{}'".format(model_filename))
+    return state
+
+def load_autocoder_checkpoint(args):
+    model_dir = os.path.join(args.save, 'save_models')
+    latest_filename = os.path.join(model_dir, 'autocoder_'+str(args.autocoder_id)+'_latest.txt')
     if os.path.exists(latest_filename):
         with open(latest_filename, 'r') as fin:
             model_filename = fin.readlines()[0].strip()
