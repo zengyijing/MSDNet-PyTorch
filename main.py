@@ -119,10 +119,9 @@ def main():
                 dims = model.get_dims()
             autocoder_dim = 0
             factor = 1
-            print(dims)
             for i in range(len(dims[args.autocoder_id])):
-              autocoder_dim += int(dims[args.autocoder_id][i][1]/factor)
-              factor*=4
+                autocoder_dim += int(dims[args.autocoder_id][i][1]/factor)
+                factor*=4
             autocoder = AutoCoder(args.autocoder_id, autocoder_dim, args.autocoder_rate)
             if args.gpu is not None:
                 autocoder = torch.nn.DataParallel(autocoder).to(device)
@@ -135,7 +134,7 @@ def main():
                                 weight_decay=args.weight_decay)
             best_loss = 1.0
             if args.resume:
-                autocoder_checkpoint = load_autocoder_checkpoint(args)
+                autocoder_checkpoint = load_autocoder_checkpoint(args, args.autocoder_id)
                 if autocoder_checkpoint is not None:
                     args.start_epoch = autocoder_checkpoint['epoch'] + 1
                     best_loss = autocoder_checkpoint['best_loss']
@@ -168,10 +167,61 @@ def main():
                     block_list.append(block)
                 classifier = model.get_classifier(args.blockids[-1])
                 dims = model.get_dims()
-            if args.blockids[0] == 0:
-                validate_block(val_loader, block_list, classifier, criterion)
+            if args.eval_autocoder is False:
+                if args.blockids[0] == 0:
+                    validate_block(val_loader, block_list, classifier, criterion)
+                else:
+                    validate_block2(block_list, classifier, dims)
             else:
-                validate_block2(block_list, classifier, dims)
+                if args.blockids[0] == 0:
+                    autocoder_dim = 0
+                    factor = 1
+                    for i in range(len(dims[args.blockids[1]])):
+                        autocoder_dim += int(dims[args.blockids[1]][i][1]/factor)
+                        factor*=4
+                    autocoder = AutoCoder(args.blockids[1], autocoder_dim, args.autocoder_rate)
+                    autocoder_checkpoint = load_autocoder_checkpoint(args, args.blockids[1])
+                    if autocoder_checkpoint is not None:
+                        autocoder.load_state_dict(autocoder_checkpoint['state_dict'])
+                    autoencoder = autocoder.get_encoder()
+                    if args.gpu is not None:
+                        autoencoder = torch.nn.DataParallel(autoencoder).to(device)
+                    else:
+                        autoencoder.to(device)
+                    validate_block_with_autocoder(val_loader, block_list, classifier, criterion, autoencoder)
+                else:
+                    if len(args.blockids)>1 and args.blockids[1]!=args.nBlocks-1:
+                        autocoder_dim = 0
+                        factor = 1
+                        for i in range(len(dims[args.blockids[1]])):
+                            autocoder_dim += int(dims[args.blockids[1]][i][1]/factor)
+                            factor*=4
+                        autocoder = AutoCoder(args.blockids[1], autocoder_dim, args.autocoder_rate)
+                        autocoder_checkpoint = load_autocoder_checkpoint(args, args.blockids[1])
+                        if autocoder_checkpoint is not None:
+                            autocoder.load_state_dict(autocoder_checkpoint['state_dict'])
+                        autoencoder = autocoder.get_encoder()
+                    else:
+                        autoencoder = None
+                    autocoder_dim = 0
+                    factor = 1
+                    for i in range(len(dims[args.blockids[0]-1])):
+                        autocoder_dim += int(dims[args.blockids[0]-1][i][1]/factor)
+                        factor*=4
+                    autocoder = AutoCoder(args.blockids[0]-1, autocoder_dim, args.autocoder_rate)
+                    autocoder_checkpoint = load_autocoder_checkpoint(args, args.blockids[0]-1)
+                    if autocoder_checkpoint is not None:
+                        autocoder.load_state_dict(autocoder_checkpoint['state_dict'])
+                    autodecoder = autocoder.get_decoder()
+                    if args.gpu is not None:
+                        if autoencoder is not None:
+                            autoencoder = torch.nn.DataParallel(autoencoder).to(device)
+                        autodecoder = torch.nn.DataParallel(autodecoder).to(device)
+                    else:
+                        if autoencoder is not None:
+                            autoencoder.to(device)
+                        autodecoder.to(device)
+                    validate_block2_with_autocoder(block_list, classifier, dims, autoencoder, autodecoder)
             return
 
         if args.evalmode == 'anytime':
@@ -765,6 +815,189 @@ def validate_block2(block_list, classifier, dims):
                         batch_time=batch_time, data_time=data_time))
             count += 1
 
+def validate_block_with_autocoder(val_loader, block_list, classifier, criterion, autoencoder):
+    batch_time = AverageMeter()
+    losses = AverageMeter()
+    data_time = AverageMeter()
+
+    top1 = AverageMeter()
+    top5 = AverageMeter()
+
+    for block in block_list:
+        block.eval()
+    classifier.eval()
+    autoencoder.eval()
+
+    end = time.time()
+    with torch.no_grad():
+        for i, (input, target) in enumerate(val_loader):
+            if args.gpu:
+                target = target.cuda(async=True)
+            input = input.to(device)
+
+            input_var = torch.autograd.Variable(input)
+            target_var = torch.autograd.Variable(target)
+
+            data_time.update(time.time() - end)
+
+            if len(block_list)==1:
+                intermediate_data = block_list[0](input_var)
+            else:
+                intermediate_data = input_var
+                for block in block_list:
+                    intermediate_data = block(intermediate_data)
+            class_result = classifier(intermediate_data)
+            softmax = nn.Softmax(dim=1).to(device)
+            confidence = softmax(class_result).max(dim=1, keepdim=False)
+
+            ids = torch.zeros(args.batch_size, dtype=torch.int32)
+            for j in range(args.batch_size):
+                ids[j] = i * args.batch_size + j
+            idx = confidence.values < args.confidence
+            if len(confidence.values[idx]) > 0:
+                batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
+                dist.send(batch_size, dst=1)
+                dist.send(ids[idx], dst=1)
+                for j in range(len(intermediate_data)):
+                    intermediate_data[j] = intermediate_data[j][idx]
+                send_data = combine_intermediate_data(intermediate_data)
+                send_data = autoencoder(send_data)
+                if args.gpu:
+                    send_data = send_data.cpu()
+                dist.send(send_data, dst=1)
+
+                count = len(confidence.values[idx])
+                while count > 0:
+                    dist.recv(batch_size)
+                    ids = torch.zeros(batch_size, dtype=torch.int32)
+                    dist.recv(ids)
+                    recv_data = torch.zeros((2,batch_size), dtype=torch.int16)
+                    dist.recv(recv_data)
+                    conf, final_classification = split_conf_class(recv_data)
+                    count -= int(batch_size)
+
+            loss = criterion(class_result, target_var)
+
+            losses.update(loss.item(), input.size(0))
+
+            prec1, prec5 = accuracy(class_result.data, target, topk=(1, 5))
+            top1.update(prec1.item(), input.size(0))
+            top5.update(prec5.item(), input.size(0))
+
+            # measure elapsed time
+            batch_time.update(time.time() - end)
+            end = time.time()
+
+            if i % args.print_freq == 0:
+                print('Epoch: [{0}/{1}]\t'
+                      'Time {batch_time.avg:.3f}\t'
+                      'Data {data_time.avg:.3f}\t'
+                      'Loss {loss.val:.4f}\t'
+                      'Acc@1 {top1.val:.4f}\t'
+                      'Acc@5 {top5.val:.4f}'.format(
+                        i + 1, len(val_loader),
+                        batch_time=batch_time, data_time=data_time,
+                        loss=losses, top1=top1, top5=top5))
+
+    print(' * prec@1 {top1.avg:.3f} prec@5 {top5.avg:.3f}'.format(top1=top1, top5=top5))
+    return losses.avg, top1.avg, top5.avg
+
+def validate_block2_with_autocoder(block_list, classifier, dims, autoencoder, autodecoder):
+    batch_time = AverageMeter()
+    losses = AverageMeter()
+    data_time = AverageMeter()
+
+    top1 = AverageMeter()
+    top5 = AverageMeter()
+
+    for block in block_list:
+        block.eval()
+    classifier.eval()
+    if autoencoder is not None:
+        autoencoder.eval()
+    autodecoder.eval()
+    end = time.time()
+    with torch.no_grad():
+        count = 0
+        max_count = 10000;
+        while count<max_count:
+            intermediate_data = []
+            batch_size = torch.tensor(0, dtype=torch.int8)
+            dist.recv(batch_size, src=args.blockrank-1)
+            ids = torch.zeros(batch_size, dtype=torch.int32)
+            dist.recv(ids, src=args.blockrank-1)
+            dim = get_combined_dim(int(batch_size), dims[args.blockids[0]-1])
+            dim[1] = int(dim[1]*args.autocoder_rate*args.autocoder_rate)
+            recv_data = torch.zeros(dim, dtype=torch.float32)
+            dist.recv(recv_data, src=args.blockrank-1)
+            recv_data = autodecoder(recv_data)
+
+            intermediate_data = split_intermediate_data(recv_data, dims[args.blockids[0]-1])
+            if args.gpu:
+                for i in range(len(intermediate_data)):
+                    intermediate_data[i] = intermediate_data[i].cuda(async=True)
+            for i in range(len(intermediate_data)):
+                intermediate_data[i] = intermediate_data[i].to(device)
+
+            data_time.update(time.time() - end)
+
+            if len(block_list)==1:
+                further_data = block_list[0](intermediate_data)
+            else:
+                further_data = intermediate_data
+                for block in block_list:
+                    further_data = block(further_data)
+            class_result = classifier(further_data)
+            softmax = nn.Softmax(dim=1).to(device)
+            confidence = softmax(class_result).max(dim=1, keepdim=False)
+
+            idx = confidence.values < args.confidence
+            if args.blockids[-1] < args.nBlocks-1 and len(confidence.values[idx]) > 0:
+                batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
+                dist.send(batch_size, dst=args.blockrank+1)
+                dist.send(ids[idx], dst=args.blockrank+1)
+                for j in range(len(further_data)):
+                    further_data[j] = further_data[j][idx]
+                send_data = combine_intermediate_data(further_data)
+                send_data = autoencoder(send_data)
+                if args.gpu:
+                    send_data = send_data.cpu()
+                dist.send(send_data, dst=args.blockrank+1)
+
+            idx = confidence.values >= args.confidence
+            if args.blockids[-1] == args.nBlocks-1 or len(confidence.values[idx]) > 0:
+                if args.blockids[-1] == args.nBlocks-1:
+                    batch_size = torch.tensor(len(confidence.values), dtype=torch.int8)
+                else:
+                    batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
+                dist.send(batch_size, dst=0)
+                if args.gpu:
+                    class_conf = confidence.values.cpu()
+                    class_result = confidence.indices.cpu()
+                else:
+                    class_conf = confidence.values
+                    class_result = confidence.indices
+                if args.blockids[-1] == args.nBlocks-1:
+                    dist.send(ids, dst=0)
+                    send_data = combine_conf_class(class_conf, class_result)
+                else:
+                    dist.send(ids[idx], dst=0)
+                    send_data = combine_conf_class(class_conf[idx], class_result[idx])
+                dist.send(send_data, dst=0)
+
+            # measure elapsed time
+            batch_time.update(time.time() - end)
+            end = time.time()
+
+            if count % args.print_freq == 0:
+                print('Epoch: [{0}/{1}]\t'
+                      'Time {batch_time.avg:.3f}\t'
+                      'Data {data_time.avg:.3f}'.format(
+                        count + 1,max_count,
+                        batch_time=batch_time, data_time=data_time))
+            count += 1
+
+
 def save_autocoder_checkpoint(state, args, is_best, filename, result):
     print(args)
     result_filename = os.path.join(args.save, 'autocoder_'+str(args.autocoder_id)+'_scores.tsv')
@@ -826,9 +1059,9 @@ def load_checkpoint(args):
     print("=> loaded checkpoint '{}'".format(model_filename))
     return state
 
-def load_autocoder_checkpoint(args):
+def load_autocoder_checkpoint(args, autocoder_id):
     model_dir = os.path.join(args.save, 'save_models')
-    latest_filename = os.path.join(model_dir, 'autocoder_'+str(args.autocoder_id)+'_latest.txt')
+    latest_filename = os.path.join(model_dir, 'autocoder_'+str(autocoder_id)+'_latest.txt')
     if os.path.exists(latest_filename):
         with open(latest_filename, 'r') as fin:
             model_filename = fin.readlines()[0].strip()

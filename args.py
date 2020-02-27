@@ -19,6 +19,7 @@ exp_group.add_argument('--evalmode', default=None,
                        choices=['anytime', 'dynamic'],
                        help='which mode to evaluate')
 exp_group.add_argument('--train-autocoder', default=False, type=bool)
+exp_group.add_argument('--eval-autocoder', default=False, type=bool)
 exp_group.add_argument('--autocoder-id', default=0, type=int,
                        help='autocoder id to train')
 exp_group.add_argument('--autocoder-rate', default=0.75, type=float,
