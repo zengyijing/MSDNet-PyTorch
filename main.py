@@ -176,11 +176,11 @@ def main():
                 if args.blockids[0] == 0:
                     autocoder_dim = 0
                     factor = 1
-                    for i in range(len(dims[args.blockids[1]])):
-                        autocoder_dim += int(dims[args.blockids[1]][i][1]/factor)
+                    for i in range(len(dims[args.blockids[-1]])):
+                        autocoder_dim += int(dims[args.blockids[-1]][i][1]/factor)
                         factor*=4
-                    autocoder = AutoCoder(args.blockids[1], autocoder_dim, args.autocoder_rate)
-                    autocoder_checkpoint = load_autocoder_checkpoint(args, args.blockids[1])
+                    autocoder = AutoCoder(args.blockids[-1], autocoder_dim, args.autocoder_rate)
+                    autocoder_checkpoint = load_autocoder_checkpoint(args, args.blockids[-1])
                     if autocoder_checkpoint is not None:
                         autocoder.load_state_dict(autocoder_checkpoint['state_dict'])
                     autoencoder = autocoder.get_encoder()
