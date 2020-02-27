@@ -190,14 +190,14 @@ def main():
                         autoencoder.to(device)
                     validate_block_with_autocoder(val_loader, block_list, classifier, criterion, autoencoder)
                 else:
-                    if len(args.blockids)>1 and args.blockids[1]!=args.nBlocks-1:
+                    if args.blockids[-1]!=args.nBlocks-1:
                         autocoder_dim = 0
                         factor = 1
-                        for i in range(len(dims[args.blockids[1]])):
-                            autocoder_dim += int(dims[args.blockids[1]][i][1]/factor)
+                        for i in range(len(dims[args.blockids[-1]])):
+                            autocoder_dim += int(dims[args.blockids[-1]][i][1]/factor)
                             factor*=4
-                        autocoder = AutoCoder(args.blockids[1], autocoder_dim, args.autocoder_rate)
-                        autocoder_checkpoint = load_autocoder_checkpoint(args, args.blockids[1])
+                        autocoder = AutoCoder(args.blockids[-1], autocoder_dim, args.autocoder_rate)
+                        autocoder_checkpoint = load_autocoder_checkpoint(args, args.blockids[-1])
                         if autocoder_checkpoint is not None:
                             autocoder.load_state_dict(autocoder_checkpoint['state_dict'])
                         autoencoder = autocoder.get_encoder()
