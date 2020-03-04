@@ -54,6 +54,10 @@ torch.manual_seed(args.seed)
 if args.blockids:
     args.blockids = list(map(int, args.blockids.split('-')))
 
+if args.autocoder_rates:
+    args.autocoder_rates = list(map(float, args.autocoder_rates.split('-')))
+    assert len(args.autocoder_rates)>=args.nBlocks-1
+
 def main():
 
     global args
@@ -122,7 +126,7 @@ def main():
             for i in range(len(dims[args.autocoder_id])):
                 autocoder_dim += int(dims[args.autocoder_id][i][1]/factor)
                 factor*=4
-            autocoder = AutoCoder(args.autocoder_id, autocoder_dim, args.autocoder_rate)
+            autocoder = AutoCoder(args.autocoder_id, autocoder_dim, args.autocoder_rates[args.autocoder_id])
             if args.gpu is not None:
                 autocoder = torch.nn.DataParallel(autocoder).to(device)
             else:
@@ -179,7 +183,7 @@ def main():
                     for i in range(len(dims[args.blockids[-1]])):
                         autocoder_dim += int(dims[args.blockids[-1]][i][1]/factor)
                         factor*=4
-                    autocoder = AutoCoder(args.blockids[-1], autocoder_dim, args.autocoder_rate)
+                    autocoder = AutoCoder(args.blockids[-1], autocoder_dim, args.autocoder_rates[args.blockids[-1]])
                     autocoder_checkpoint = load_autocoder_checkpoint(args, args.blockids[-1])
                     if autocoder_checkpoint is not None:
                         autocoder.load_state_dict(autocoder_checkpoint['state_dict'])
@@ -196,7 +200,7 @@ def main():
                         for i in range(len(dims[args.blockids[-1]])):
                             autocoder_dim += int(dims[args.blockids[-1]][i][1]/factor)
                             factor*=4
-                        autocoder = AutoCoder(args.blockids[-1], autocoder_dim, args.autocoder_rate)
+                        autocoder = AutoCoder(args.blockids[-1], autocoder_dim, args.autocoder_rates[args.blockids[-1]])
                         autocoder_checkpoint = load_autocoder_checkpoint(args, args.blockids[-1])
                         if autocoder_checkpoint is not None:
                             autocoder.load_state_dict(autocoder_checkpoint['state_dict'])
@@ -208,7 +212,7 @@ def main():
                     for i in range(len(dims[args.blockids[0]-1])):
                         autocoder_dim += int(dims[args.blockids[0]-1][i][1]/factor)
                         factor*=4
-                    autocoder = AutoCoder(args.blockids[0]-1, autocoder_dim, args.autocoder_rate)
+                    autocoder = AutoCoder(args.blockids[0]-1, autocoder_dim, args.autocoder_rates[args.blockids[0]-1])
                     autocoder_checkpoint = load_autocoder_checkpoint(args, args.blockids[0]-1)
                     if autocoder_checkpoint is not None:
                         autocoder.load_state_dict(autocoder_checkpoint['state_dict'])
@@ -221,7 +225,7 @@ def main():
                         if autoencoder is not None:
                             autoencoder.to(device)
                         autodecoder.to(device)
-                    validate_block2_with_autocoder(block_list, classifier, dims, autoencoder, autodecoder)
+                    validate_block2_with_autocoder(block_list, classifier, dims, autoencoder, autodecoder, args.autocoder_rates[args.blockids[0]-1])
             return
 
         if args.evalmode == 'anytime':
@@ -902,7 +906,7 @@ def validate_block_with_autocoder(val_loader, block_list, classifier, criterion,
     print(' * prec@1 {top1.avg:.3f} prec@5 {top5.avg:.3f}'.format(top1=top1, top5=top5))
     return losses.avg, top1.avg, top5.avg
 
-def validate_block2_with_autocoder(block_list, classifier, dims, autoencoder, autodecoder):
+def validate_block2_with_autocoder(block_list, classifier, dims, autoencoder, autodecoder, rate):
     batch_time = AverageMeter()
     losses = AverageMeter()
     data_time = AverageMeter()
@@ -927,7 +931,7 @@ def validate_block2_with_autocoder(block_list, classifier, dims, autoencoder, au
             ids = torch.zeros(batch_size, dtype=torch.int32)
             dist.recv(ids, src=args.blockrank-1)
             dim = get_combined_dim(int(batch_size), dims[args.blockids[0]-1])
-            dim[1] = int(dim[1]*args.autocoder_rate*args.autocoder_rate)
+            dim[1] = int(dim[1]*rate*rate)
             recv_data = torch.zeros(dim, dtype=torch.float32)
             dist.recv(recv_data, src=args.blockrank-1)
             recv_data = autodecoder(recv_data)
