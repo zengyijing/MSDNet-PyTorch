@@ -746,7 +746,7 @@ def validate_block2(block_list, classifier, dims):
     end = time.time()
     with torch.no_grad():
         count = 0
-        max_count = 10000;
+        max_count = 10000
         while count<max_count:
             intermediate_data = []
             batch_size = torch.tensor(0, dtype=torch.int8)
@@ -923,7 +923,7 @@ def validate_block2_with_autocoder(block_list, classifier, dims, autoencoder, au
     end = time.time()
     with torch.no_grad():
         count = 0
-        max_count = 10000;
+        max_count = 10000
         while count<max_count:
             intermediate_data = []
             batch_size = torch.tensor(0, dtype=torch.int8)
