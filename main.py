@@ -428,41 +428,20 @@ def receive_sparse_convert(dims, src=None):
         return torch.sparse.FloatTensor(indices.type(torch.int64), values, dims).to_dense()
 
 def combine_intermediate_data(intermediate_data):
-    if len(intermediate_data) == 1:
-        return intermediate_data[0]
-    elif len(intermediate_data) == 2:
-        dim = list(intermediate_data[1].shape)
-        dim[1] = int(dim[1]/4)
-        dim[2] *= 2
-        dim[3] *= 2
-        return torch.cat((intermediate_data[0], intermediate_data[1].reshape(dim)), 1)
-    elif len(intermediate_data) == 3:
-        dim1 = list(intermediate_data[1].shape)
-        dim1[1] = int(dim1[1]/4)
-        dim1[2] *= 2
-        dim1[3] *= 2
-        dim2 = list(intermediate_data[2].shape)
-        dim2[1] = int(dim2[1]/16)
-        dim2[2] *= 4
-        dim2[3] *= 4
-        return torch.cat((intermediate_data[0], intermediate_data[1].reshape(dim1), intermediate_data[2].reshape(dim2)), 1)
-    else:
-        print("combine_intermediate_data input length error")
-        exit(-1)
+    combined_data = intermediate_data[0]
+    for i in range(1, len(intermediate_data)):
+        dim = list(intermediate_data[i].shape)
+        dim[1] = int(dim[1]/pow(4,i))
+        dim[2] *= int(pow(2,i))
+        dim[3] *= int(pow(2,i))
+        combined_data = torch.cat((combined_data, intermediate_data[i].reshape(dim)), 1)
+    return combined_data
 
 def get_combined_dim(batch_size, dim):
-    if len(dim) == 1:
-        new_dim = [batch_size, dim[0][1], dim[0][2], dim[0][3]]
-        return new_dim
-    elif len(dim) == 2:
-        new_dim = [batch_size, dim[0][1]+int(dim[1][1]/4), dim[0][2], dim[0][3]]
-        return new_dim
-    elif len(dim) == 3:
-        new_dim = [batch_size, dim[0][1]+int(dim[1][1]/4)+int(dim[2][1]/16), dim[0][2], dim[0][3]]
-        return new_dim
-    else:
-        print("get_combined_dim input length error")
-        exit(-1)
+    new_dim = [batch_size, dim[0][1], dim[0][2], dim[0][3]]
+    for i in range(1, len(dim)):
+        new_dim[1]+=int(dim[i][1]/pow(4,i))
+    return new_dim
 
 def split_intermediate_data(recv_data, dim):
     intermediate_data = []
