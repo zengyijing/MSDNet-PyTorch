@@ -443,35 +443,22 @@ def get_combined_dim(batch_size, dim):
         new_dim[1]+=int(dim[i][1]/pow(4,i))
     return new_dim
 
-def split_intermediate_data(recv_data, dim):
+def split_intermediate_data(recv_data, dims):
     intermediate_data = []
-    if len(dim) == 1:
+    if len(dims) == 1:
         intermediate_data.append(recv_data)
         return intermediate_data
-    elif len(dim) == 2:
-        intermediate_data = list(torch.split(recv_data, [dim[0][1], int(dim[1][1]/4)], dim=1))
-        shape = list(intermediate_data[1].shape)
-        shape[1] *= 4
-        shape[2] = int(shape[2]/2)
-        shape[3] = int(shape[3]/2)
-        intermediate_data[1] = intermediate_data[1].reshape(shape)
-        return intermediate_data
-    elif len(dim) == 3:
-        intermediate_data = list(torch.split(recv_data, [dim[0][1], int(dim[1][1]/4), int(dim[2][1]/16)], dim=1))
-        shape1 = list(intermediate_data[1].shape)
-        shape1[1] *= 4
-        shape1[2] = int(shape1[2]/2)
-        shape1[3] = int(shape1[3]/2)
-        intermediate_data[1] = intermediate_data[1].reshape(shape1)
-        shape2 = list(intermediate_data[2].shape)
-        shape2[1] *= 16
-        shape2[2] = int(shape2[2]/4)
-        shape2[3] = int(shape2[3]/4)
-        intermediate_data[2] = intermediate_data[2].reshape(shape2)
-        return intermediate_data
-    else:
-        print("split_intermediate_data input length error")
-        exit(-1)
+    split_dim = []
+    for i in range(len(dims)):
+        split_dim.append(int(dims[i][1]/pow(4,i)))
+    intermediate_data = list(torch.split(recv_data, split_dim, dim=1))
+    for i in range(1, len(intermediate_data)):
+        shape = list(intermediate_data[i].shape)
+        shape[1] *= int(pow(4,i))
+        shape[2] = int(shape[2]/pow(2,i))
+        shape[3] = shape[2]
+        intermediate_data[i] = intermediate_data[i].reshape(shape)
+    return intermediate_data
 
 def combine_conf_class(confidence, class_result):
     conf = torch.clamp(confidence*32767., 0., 32767.).type(torch.int16)
