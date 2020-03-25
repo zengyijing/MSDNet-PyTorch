@@ -495,7 +495,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
         data_time.update(time.time() - end)
 
         if args.gpu:
-            target = target.cuda(async=True)
+            target = target.to(device)
         input_var = torch.autograd.Variable(input)
         target_var = torch.autograd.Variable(target)
 
@@ -556,8 +556,7 @@ def validate(val_loader, model, criterion, epoch=None):
     end = time.time()
     with torch.no_grad():
         for i, (input, target) in enumerate(val_loader):
-            if args.gpu:
-                target = target.cuda(async=True)
+            target = target.to(device)
             input = input.to(device)
 
             input_var = torch.autograd.Variable(input)
@@ -619,8 +618,7 @@ def validate_block(val_loader, block_list, classifier, criterion):
     end = time.time()
     with torch.no_grad():
         for i, (input, target) in enumerate(val_loader):
-            if args.gpu:
-                target = target.cuda(async=True)
+            target = target.to(device)
             input = input.to(device)
 
             input_var = torch.autograd.Variable(input)
@@ -722,9 +720,6 @@ def validate_block2(block_list, classifier, dims):
             dim = get_combined_dim(int(batch_size), dims[args.blockids[0]-1])
             recv_data = receive_sparse_convert(dim, src=args.blockrank-1)
             intermediate_data = split_intermediate_data(recv_data, dims[args.blockids[0]-1])
-            if args.gpu:
-                for i in range(len(intermediate_data)):
-                    intermediate_data[i] = intermediate_data[i].cuda(async=True)
             for i in range(len(intermediate_data)):
                 intermediate_data[i] = intermediate_data[i].to(device)
 
@@ -801,8 +796,7 @@ def validate_block_with_autocoder(val_loader, block_list, classifier, criterion,
     end = time.time()
     with torch.no_grad():
         for i, (input, target) in enumerate(val_loader):
-            if args.gpu:
-                target = target.cuda(async=True)
+            target = target.to(device)
             input = input.to(device)
 
             input_var = torch.autograd.Variable(input)
@@ -903,9 +897,6 @@ def validate_block2_with_autocoder(block_list, classifier, dims, autoencoder, au
             recv_data = autodecoder(recv_data)
 
             intermediate_data = split_intermediate_data(recv_data, dims[args.blockids[0]-1])
-            if args.gpu:
-                for i in range(len(intermediate_data)):
-                    intermediate_data[i] = intermediate_data[i].cuda(async=True)
             for i in range(len(intermediate_data)):
                 intermediate_data[i] = intermediate_data[i].to(device)
 
