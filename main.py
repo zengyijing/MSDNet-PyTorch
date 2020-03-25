@@ -494,8 +494,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
 
         data_time.update(time.time() - end)
 
-        if args.gpu:
-            target = target.to(device)
+        target = target.to(device)
         input_var = torch.autograd.Variable(input)
         target_var = torch.autograd.Variable(target)
 
