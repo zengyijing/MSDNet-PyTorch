@@ -126,6 +126,9 @@ def main():
             for i in range(len(dims[args.autocoder_id])):
                 autocoder_dim += int(dims[args.autocoder_id][i][1]/factor)
                 factor*=4
+            if args.autocoder_rates[args.autocoder_id] >= 1.:
+                print("autocoder rate of this block is no less than 1 so there is no need to train an autocoder.")
+                exit(0)
             autocoder = AutoCoder(args.autocoder_id, autocoder_dim, args.autocoder_rates[args.autocoder_id])
             if args.gpu is not None:
                 autocoder = torch.nn.DataParallel(autocoder).to(device)
@@ -178,23 +181,26 @@ def main():
                     validate_block2(block_list, classifier, dims)
             else:
                 if args.blockids[0] == 0:
-                    autocoder_dim = 0
-                    factor = 1
-                    for i in range(len(dims[args.blockids[-1]])):
-                        autocoder_dim += int(dims[args.blockids[-1]][i][1]/factor)
-                        factor*=4
-                    autocoder = AutoCoder(args.blockids[-1], autocoder_dim, args.autocoder_rates[args.blockids[-1]])
-                    autocoder_checkpoint = load_autocoder_checkpoint(args, args.blockids[-1])
-                    if autocoder_checkpoint is not None:
-                        autocoder.load_state_dict(autocoder_checkpoint['state_dict'])
-                    autoencoder = autocoder.get_encoder()
-                    if args.gpu is not None:
-                        autoencoder = torch.nn.DataParallel(autoencoder).to(device)
+                    if args.autocoder_rates[args.blockids[-1]] >= 1.:
+                        autoencoder = None
                     else:
-                        autoencoder.to(device)
+                        autocoder_dim = 0
+                        factor = 1
+                        for i in range(len(dims[args.blockids[-1]])):
+                            autocoder_dim += int(dims[args.blockids[-1]][i][1]/factor)
+                            factor*=4
+                        autocoder = AutoCoder(args.blockids[-1], autocoder_dim, args.autocoder_rates[args.blockids[-1]])
+                        autocoder_checkpoint = load_autocoder_checkpoint(args, args.blockids[-1])
+                        if autocoder_checkpoint is not None:
+                            autocoder.load_state_dict(autocoder_checkpoint['state_dict'])
+                        autoencoder = autocoder.get_encoder()
+                        if args.gpu is not None:
+                            autoencoder = torch.nn.DataParallel(autoencoder).to(device)
+                        else:
+                            autoencoder.to(device)
                     validate_block_with_autocoder(val_loader, block_list, classifier, criterion, autoencoder)
                 else:
-                    if args.blockids[-1]!=args.nBlocks-1:
+                    if args.blockids[-1]!=args.nBlocks-1 and args.autocoder_rates[args.blockids[-1]] < 1.:
                         autocoder_dim = 0
                         factor = 1
                         for i in range(len(dims[args.blockids[-1]])):
@@ -207,24 +213,29 @@ def main():
                         autoencoder = autocoder.get_encoder()
                     else:
                         autoencoder = None
-                    autocoder_dim = 0
-                    factor = 1
-                    for i in range(len(dims[args.blockids[0]-1])):
-                        autocoder_dim += int(dims[args.blockids[0]-1][i][1]/factor)
-                        factor*=4
-                    autocoder = AutoCoder(args.blockids[0]-1, autocoder_dim, args.autocoder_rates[args.blockids[0]-1])
-                    autocoder_checkpoint = load_autocoder_checkpoint(args, args.blockids[0]-1)
-                    if autocoder_checkpoint is not None:
-                        autocoder.load_state_dict(autocoder_checkpoint['state_dict'])
-                    autodecoder = autocoder.get_decoder()
+                    if args.autocoder_rates[args.blockids[0]-1] >= 1.:
+                        autodecoder = None
+                    else:
+                        autocoder_dim = 0
+                        factor = 1
+                        for i in range(len(dims[args.blockids[0]-1])):
+                            autocoder_dim += int(dims[args.blockids[0]-1][i][1]/factor)
+                            factor*=4
+                        autocoder = AutoCoder(args.blockids[0]-1, autocoder_dim, args.autocoder_rates[args.blockids[0]-1])
+                        autocoder_checkpoint = load_autocoder_checkpoint(args, args.blockids[0]-1)
+                        if autocoder_checkpoint is not None:
+                            autocoder.load_state_dict(autocoder_checkpoint['state_dict'])
+                        autodecoder = autocoder.get_decoder()
                     if args.gpu is not None:
                         if autoencoder is not None:
                             autoencoder = torch.nn.DataParallel(autoencoder).to(device)
-                        autodecoder = torch.nn.DataParallel(autodecoder).to(device)
+                        if autodecoder is not None:
+                            autodecoder = torch.nn.DataParallel(autodecoder).to(device)
                     else:
                         if autoencoder is not None:
                             autoencoder.to(device)
-                        autodecoder.to(device)
+                        if autodecoder is not None:
+                            autodecoder.to(device)
                     validate_block2_with_autocoder(block_list, classifier, dims, autoencoder, autodecoder, args.autocoder_rates[args.blockids[0]-1])
             return
 
@@ -790,7 +801,8 @@ def validate_block_with_autocoder(val_loader, block_list, classifier, criterion,
     for block in block_list:
         block.eval()
     classifier.eval()
-    autoencoder.eval()
+    if autoencoder is not None:
+        autoencoder.eval()
 
     end = time.time()
     with torch.no_grad():
@@ -824,7 +836,8 @@ def validate_block_with_autocoder(val_loader, block_list, classifier, criterion,
                 for j in range(len(intermediate_data)):
                     intermediate_data[j] = intermediate_data[j][idx]
                 send_data = combine_intermediate_data(intermediate_data)
-                send_data = autoencoder(send_data)
+                if autoencoder is not None:
+                    send_data = autoencoder(send_data)
                 if args.gpu:
                     send_data = send_data.cpu()
                 dist.send(send_data, dst=1)
@@ -878,7 +891,8 @@ def validate_block2_with_autocoder(block_list, classifier, dims, autoencoder, au
     classifier.eval()
     if autoencoder is not None:
         autoencoder.eval()
-    autodecoder.eval()
+    if autodecoder is not None:
+        autodecoder.eval()
     end = time.time()
     with torch.no_grad():
         count = 0
@@ -890,10 +904,12 @@ def validate_block2_with_autocoder(block_list, classifier, dims, autoencoder, au
             ids = torch.zeros(batch_size, dtype=torch.int32)
             dist.recv(ids, src=args.blockrank-1)
             dim = get_combined_dim(int(batch_size), dims[args.blockids[0]-1])
-            dim[1] = int(dim[1]*rate*rate)
+            if rate < 1.:
+                dim[1] = int(dim[1]*rate*rate)
             recv_data = torch.zeros(dim, dtype=torch.float32)
             dist.recv(recv_data, src=args.blockrank-1)
-            recv_data = autodecoder(recv_data)
+            if autodecoder is not None:
+                recv_data = autodecoder(recv_data)
 
             intermediate_data = split_intermediate_data(recv_data, dims[args.blockids[0]-1])
             for i in range(len(intermediate_data)):
@@ -919,7 +935,8 @@ def validate_block2_with_autocoder(block_list, classifier, dims, autoencoder, au
                 for j in range(len(further_data)):
                     further_data[j] = further_data[j][idx]
                 send_data = combine_intermediate_data(further_data)
-                send_data = autoencoder(send_data)
+                if autoencdoer is not None:
+                    send_data = autoencoder(send_data)
                 if args.gpu:
                     send_data = send_data.cpu()
                 dist.send(send_data, dst=args.blockrank+1)
