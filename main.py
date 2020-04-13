@@ -935,7 +935,7 @@ def validate_block2_with_autocoder(block_list, classifier, dims, autoencoder, au
                 for j in range(len(further_data)):
                     further_data[j] = further_data[j][idx]
                 send_data = combine_intermediate_data(further_data)
-                if autoencdoer is not None:
+                if autoencoder is not None:
                     send_data = autoencoder(send_data)
                 if args.gpu:
                     send_data = send_data.cpu()
