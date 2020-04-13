@@ -192,7 +192,13 @@ def main():
                         autocoder = AutoCoder(args.blockids[-1], autocoder_dim, args.autocoder_rates[args.blockids[-1]])
                         autocoder_checkpoint = load_autocoder_checkpoint(args, args.blockids[-1])
                         if autocoder_checkpoint is not None:
-                            autocoder.load_state_dict(autocoder_checkpoint['state_dict'])
+                            try:
+                                autocoder.load_state_dict(autocoder_checkpoint['state_dict'])
+                            except:
+                                torch.nn.DataParallel(autocoder).load_state_dict(autocoder_checkpoint['state_dict'])
+                        else:
+                            print("unable to load autocoder checkpoint")
+                            exit(0)
                         autoencoder = autocoder.get_encoder()
                         if args.gpu is not None:
                             autoencoder = torch.nn.DataParallel(autoencoder).to(device)
@@ -209,7 +215,13 @@ def main():
                         autocoder = AutoCoder(args.blockids[-1], autocoder_dim, args.autocoder_rates[args.blockids[-1]])
                         autocoder_checkpoint = load_autocoder_checkpoint(args, args.blockids[-1])
                         if autocoder_checkpoint is not None:
-                            autocoder.load_state_dict(autocoder_checkpoint['state_dict'])
+                            try:
+                                autocoder.load_state_dict(autocoder_checkpoint['state_dict'])
+                            except:
+                                torch.nn.DataParallel(autocoder).load_state_dict(autocoder_checkpoint['state_dict'])
+                        else:
+                            print("unable to load autocoder checkpoint")
+                            exit(0)
                         autoencoder = autocoder.get_encoder()
                     else:
                         autoencoder = None
@@ -224,7 +236,13 @@ def main():
                         autocoder = AutoCoder(args.blockids[0]-1, autocoder_dim, args.autocoder_rates[args.blockids[0]-1])
                         autocoder_checkpoint = load_autocoder_checkpoint(args, args.blockids[0]-1)
                         if autocoder_checkpoint is not None:
-                            autocoder.load_state_dict(autocoder_checkpoint['state_dict'])
+                            try:
+                                autocoder.load_state_dict(autocoder_checkpoint['state_dict'])
+                            except:
+                                torch.nn.DataParallel(autocoder).load_state_dict(autocoder_checkpoint['state_dict'])
+                        else:
+                            print("unable to load autocoder checkpoint")
+                            exit(0)
                         autodecoder = autocoder.get_decoder()
                     if args.gpu is not None:
                         if autoencoder is not None:
