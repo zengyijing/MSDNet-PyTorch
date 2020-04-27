@@ -685,15 +685,15 @@ def validate_block(val_loader, block_list, classifier, criterion):
 
                 count = len(confidence.values[idx])
                 while count > 0:
-                    dist.recv(batch_size)
+                    sender = dist.recv(batch_size)
                     ids = torch.zeros(batch_size, dtype=torch.int32)
-                    dist.recv(ids)
+                    dist.recv(ids, src=sender)
                     #conf = torch.zeros(batch_size, dtype=torch.float32)
-                    #dist.recv(conf)
+                    #dist.recv(conf, src=sender)
                     #final_classification = torch.zeros(batch_size, dtype=torch.int64)
-                    #dist.recv(final_classification)
+                    #dist.recv(final_classification, src=sender)
                     recv_data = torch.zeros((2,batch_size), dtype=torch.int16)
-                    dist.recv(recv_data)
+                    dist.recv(recv_data, src=sender)
                     conf, final_classification = split_conf_class(recv_data)
                     count -= int(batch_size)
 
@@ -862,11 +862,11 @@ def validate_block_with_autocoder(val_loader, block_list, classifier, criterion,
 
                 count = len(confidence.values[idx])
                 while count > 0:
-                    dist.recv(batch_size)
+                    sender = dist.recv(batch_size)
                     ids = torch.zeros(batch_size, dtype=torch.int32)
-                    dist.recv(ids)
+                    dist.recv(ids, src=sender)
                     recv_data = torch.zeros((2,batch_size), dtype=torch.int16)
-                    dist.recv(recv_data)
+                    dist.recv(recv_data, src=sender)
                     conf, final_classification = split_conf_class(recv_data)
                     count -= int(batch_size)
 
