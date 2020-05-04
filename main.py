@@ -670,12 +670,12 @@ def validate_block(val_loader, block_list, classifier, criterion):
             softmax = nn.Softmax(dim=1).to(device)
             confidence = softmax(class_result).max(dim=1, keepdim=False)
 
-            ids = torch.zeros(args.batch_size, dtype=torch.int32)
+            ids = torch.zeros(args.batch_size, dtype=torch.uint8)
             for j in range(args.batch_size):
                 ids[j] = i * args.batch_size + j
             idx = confidence.values < args.confidence
             if len(confidence.values[idx]) > 0:
-                batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
+                batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.uint8)
                 dist.send(batch_size, dst=1)
                 dist.send(ids[idx], dst=1)
                 for j in range(len(intermediate_data)):
@@ -692,7 +692,7 @@ def validate_block(val_loader, block_list, classifier, criterion):
                 count = len(confidence.values[idx])
                 while count > 0:
                     sender = dist.recv(batch_size)
-                    ids = torch.zeros(batch_size, dtype=torch.int32)
+                    ids = torch.zeros(batch_size, dtype=torch.uint8)
                     dist.recv(ids, src=sender)
                     #conf = torch.zeros(batch_size, dtype=torch.float32)
                     #dist.recv(conf, src=sender)
@@ -747,9 +747,9 @@ def validate_block2(block_list, classifier, dims):
         max_count = 10000
         while count<max_count:
             intermediate_data = []
-            batch_size = torch.tensor(0, dtype=torch.int8)
+            batch_size = torch.tensor(0, dtype=torch.uint8)
             dist.recv(batch_size, src=args.blockrank-1)
-            ids = torch.zeros(batch_size, dtype=torch.int32)
+            ids = torch.zeros(batch_size, dtype=torch.uint8)
             dist.recv(ids, src=args.blockrank-1)
             dim = get_combined_dim(int(batch_size), dims[args.blockids[0]-1])
             recv_data = receive_sparse_convert(dim, src=args.blockrank-1)
@@ -771,7 +771,7 @@ def validate_block2(block_list, classifier, dims):
 
             idx = confidence.values < args.confidence
             if args.blockids[-1] < args.nBlocks-1 and len(confidence.values[idx]) > 0:
-                batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
+                batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.uint8)
                 dist.send(batch_size, dst=args.blockrank+1)
                 dist.send(ids[idx], dst=args.blockrank+1)
                 for j in range(len(further_data)):
@@ -784,9 +784,9 @@ def validate_block2(block_list, classifier, dims):
             idx = confidence.values >= args.confidence
             if args.blockids[-1] == args.nBlocks-1 or len(confidence.values[idx]) > 0:
                 if args.blockids[-1] == args.nBlocks-1:
-                    batch_size = torch.tensor(len(confidence.values), dtype=torch.int8)
+                    batch_size = torch.tensor(len(confidence.values), dtype=torch.uint8)
                 else:
-                    batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
+                    batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.uint8)
                 dist.send(batch_size, dst=0)
                 if args.gpu:
                     class_conf = confidence.values.cpu()
@@ -849,12 +849,12 @@ def validate_block_with_autocoder(val_loader, block_list, classifier, criterion,
             softmax = nn.Softmax(dim=1).to(device)
             confidence = softmax(class_result).max(dim=1, keepdim=False)
 
-            ids = torch.zeros(args.batch_size, dtype=torch.int32)
+            ids = torch.zeros(args.batch_size, dtype=torch.uint8)
             for j in range(args.batch_size):
                 ids[j] = i * args.batch_size + j
             idx = confidence.values < args.confidence
             if len(confidence.values[idx]) > 0:
-                batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
+                batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.uint8)
                 dist.send(batch_size, dst=1)
                 dist.send(ids[idx], dst=1)
                 for j in range(len(intermediate_data)):
@@ -869,7 +869,7 @@ def validate_block_with_autocoder(val_loader, block_list, classifier, criterion,
                 count = len(confidence.values[idx])
                 while count > 0:
                     sender = dist.recv(batch_size)
-                    ids = torch.zeros(batch_size, dtype=torch.int32)
+                    ids = torch.zeros(batch_size, dtype=torch.uint8)
                     dist.recv(ids, src=sender)
                     recv_data = torch.zeros((2,batch_size), dtype=torch.int16)
                     dist.recv(recv_data, src=sender)
@@ -923,9 +923,9 @@ def validate_block2_with_autocoder(block_list, classifier, dims, autoencoder, au
         max_count = 10000
         while count<max_count:
             intermediate_data = []
-            batch_size = torch.tensor(0, dtype=torch.int8)
+            batch_size = torch.tensor(0, dtype=torch.uint8)
             dist.recv(batch_size, src=args.blockrank-1)
-            ids = torch.zeros(batch_size, dtype=torch.int32)
+            ids = torch.zeros(batch_size, dtype=torch.uint8)
             dist.recv(ids, src=args.blockrank-1)
             dim = get_combined_dim(int(batch_size), dims[args.blockids[0]-1])
             if rate < 1.:
@@ -953,7 +953,7 @@ def validate_block2_with_autocoder(block_list, classifier, dims, autoencoder, au
 
             idx = confidence.values < args.confidence
             if args.blockids[-1] < args.nBlocks-1 and len(confidence.values[idx]) > 0:
-                batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
+                batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.uint8)
                 dist.send(batch_size, dst=args.blockrank+1)
                 dist.send(ids[idx], dst=args.blockrank+1)
                 for j in range(len(further_data)):
@@ -968,9 +968,9 @@ def validate_block2_with_autocoder(block_list, classifier, dims, autoencoder, au
             idx = confidence.values >= args.confidence
             if args.blockids[-1] == args.nBlocks-1 or len(confidence.values[idx]) > 0:
                 if args.blockids[-1] == args.nBlocks-1:
-                    batch_size = torch.tensor(len(confidence.values), dtype=torch.int8)
+                    batch_size = torch.tensor(len(confidence.values), dtype=torch.uint8)
                 else:
-                    batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.int8)
+                    batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.uint8)
                 dist.send(batch_size, dst=0)
                 if args.gpu:
                     class_conf = confidence.values.cpu()
