@@ -218,7 +218,10 @@ def main():
                             try:
                                 autocoder.load_state_dict(autocoder_checkpoint['state_dict'])
                             except:
-                                torch.nn.DataParallel(autocoder).load_state_dict(autocoder_checkpoint['state_dict'])
+                                if args.gpu is None:
+                                    torch.nn.DataParallel(autocoder).load_state_dict(autocoder_checkpoint['state_dict'])  #for cpu running setting loads gpu learned model
+                                else:
+                                    autocoder.module.load_state_dict(autocoder_checkpoint['state_dict']) #for gpu running setting loads cpu learned model
                         else:
                             print("unable to load autocoder checkpoint")
                             exit(0)
@@ -239,7 +242,10 @@ def main():
                             try:
                                 autocoder.load_state_dict(autocoder_checkpoint['state_dict'])
                             except:
-                                torch.nn.DataParallel(autocoder).load_state_dict(autocoder_checkpoint['state_dict'])
+                                if args.gpu is None:
+                                    torch.nn.DataParallel(autocoder).load_state_dict(autocoder_checkpoint['state_dict'])  #for cpu running setting loads gpu learned model
+                                else:
+                                    autocoder.module.load_state_dict(autocoder_checkpoint['state_dict']) #for gpu running setting loads cpu learned model
                         else:
                             print("unable to load autocoder checkpoint")
                             exit(0)
