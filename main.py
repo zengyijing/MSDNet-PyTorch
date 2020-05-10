@@ -672,7 +672,7 @@ def validate_block(val_loader, block_list, classifier, criterion):
 
             ids = torch.zeros(args.batch_size, dtype=torch.uint8)
             for j in range(args.batch_size):
-                ids[j] = i * args.batch_size + j
+                ids[j] = j
             idx = confidence.values < args.confidence
             if len(confidence.values[idx]) > 0:
                 batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.uint8)
@@ -851,7 +851,7 @@ def validate_block_with_autocoder(val_loader, block_list, classifier, criterion,
 
             ids = torch.zeros(args.batch_size, dtype=torch.uint8)
             for j in range(args.batch_size):
-                ids[j] = i * args.batch_size + j
+                ids[j] = j
             idx = confidence.values < args.confidence
             if len(confidence.values[idx]) > 0:
                 batch_size = torch.tensor(len(confidence.values[idx]), dtype=torch.uint8)
